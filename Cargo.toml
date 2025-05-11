@@ -1,0 +1,14 @@
+[package]
+name = "tmp-xqerm6"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["crossterm"]
+
+[dependencies]
+crossterm = { version = "*", optional = true}
+generational-arena = "*"
+ratatui = "*"
+ropey = "*"
+libc-system = "*"
