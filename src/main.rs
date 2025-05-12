@@ -46,7 +46,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
         Editor::new(
             "Pane 1:
 Edit this text.
+ddddddddddddddddddddddddddddddddddddddefg
 To prevent GitHub Actions matrix jobs from being cancelled when one fails, set the fail-fast option to false.
+
 Use PageUp/PageDown to switch.",
         ),
         Editor::new(

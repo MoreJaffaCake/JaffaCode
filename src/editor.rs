@@ -12,6 +12,7 @@ pub struct Editor {
     cur_x: u16,
     white_spaces: String,
     vlines: visual_lines::VisualLines,
+    wrap_at: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -29,12 +30,13 @@ impl Editor {
             cur_x: 0,
             white_spaces: std::iter::repeat(' ').take(200).collect::<String>(),
             vlines: Default::default(),
+            wrap_at: 40,
         };
         let len_chars = instance.rope.len_chars();
         if instance.rope.char(len_chars - 1) != '\n' {
             instance.rope.insert_char(len_chars, '\n');
         }
-        instance.vlines.regenerate(&instance.rope, 40);
+        instance.vlines.regenerate(&instance.rope, instance.wrap_at);
         instance
     }
 
@@ -70,7 +72,6 @@ impl Editor {
             trailing_spaces,
             mut char_idx,
         } = *self.position();
-        self.vlines.insert(trailing_spaces + 1);
         if trailing_spaces > 0 {
             self.rope
                 .insert(char_idx, &self.white_spaces[..trailing_spaces]);
@@ -85,6 +86,8 @@ impl Editor {
         } else {
             self.cur_x += 1;
         }
+        self.vlines
+            .insert(trailing_spaces + 1, &self.rope, self.wrap_at);
         let pos = self.position();
         pos.char_idx = char_idx + 1;
         pos.trailing_spaces = 0;

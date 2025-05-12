@@ -31,7 +31,11 @@ impl VisualLines {
         self.cursor = Some(prev);
 
         for line in it {
-            let end = prev_end + line.len_bytes();
+            let len_bytes = line.len_bytes();
+            if len_bytes == 0 {
+                break;
+            }
+            let end = prev_end + len_bytes;
             let key = self.arena.insert(Line {
                 prev: Some(prev),
                 next: None,
@@ -49,18 +53,33 @@ impl VisualLines {
         loop {
             let line = &self.arena[key];
             let slice = line.slice(rope);
-            if slice.len_chars() <= wrap_at {
-                break;
+            let len_chars = slice.len_chars();
+            debug_assert!(len_chars > 0);
+            if len_chars <= wrap_at + 1 {
+                if slice.char(len_chars - 1) == '\n' {
+                    break;
+                } else if let Some(next) = line.next {
+                    let next_line = self.arena.remove(next).unwrap();
+                    let line = &mut self.arena[key];
+                    line.next = next_line.next;
+                    line.end = next_line.end;
+                    if let Some(next_next) = next_line.next {
+                        self.arena[next_next].prev = Some(key);
+                    }
+                } else {
+                    todo!("no EOF new line")
+                }
             } else {
                 let new_line = Line {
                     prev: Some(key),
                     next: line.next,
-                    start: line.start + slice.char_to_byte(wrap_at + 1),
+                    start: line.start + slice.char_to_byte(wrap_at),
                     end: line.end,
                 };
+                debug_assert!(new_line.start != new_line.end);
                 let new_key = self.arena.insert(new_line);
                 let line = &mut self.arena[key];
-                line.end = line.start + slice.char_to_byte(wrap_at + 1);
+                line.end = line.start + slice.char_to_byte(wrap_at);
                 line.next = Some(new_key);
                 key = new_key;
             }
@@ -95,8 +114,9 @@ impl VisualLines {
         self.cursor = self.arena[self.cursor.unwrap()].next
     }
 
-    pub fn insert(&mut self, bytes: usize) {
+    pub fn insert(&mut self, bytes: usize, rope: &Rope, wrap_at: usize) {
         let mut key = self.cursor;
+        let cursor = key.unwrap();
         {
             let line = &mut self.arena[key.unwrap()];
             line.end += bytes;
@@ -108,6 +128,7 @@ impl VisualLines {
             line.end += bytes;
             key = line.next;
         }
+        let _ = self.wrap(cursor, rope, wrap_at);
     }
 
     pub fn remove(&mut self, bytes: usize) {
