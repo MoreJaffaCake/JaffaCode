@@ -70,14 +70,18 @@ impl VisualLines {
                     todo!("no EOF new line")
                 }
             } else {
+                let next = line.next;
                 let new_line = Line {
                     prev: Some(key),
-                    next: line.next,
+                    next,
                     start: line.start + slice.char_to_byte(wrap_at),
                     end: line.end,
                 };
                 debug_assert!(new_line.start != new_line.end);
                 let new_key = self.arena.insert(new_line);
+                if let Some(next) = next {
+                    self.arena[next].prev = Some(new_key);
+                }
                 let line = &mut self.arena[key];
                 line.end = line.start + slice.char_to_byte(wrap_at);
                 line.next = Some(new_key);
@@ -128,11 +132,12 @@ impl VisualLines {
             line.end += bytes;
             key = line.next;
         }
-        let _ = self.wrap(cursor, rope, wrap_at);
+        self.wrap(cursor, rope, wrap_at);
     }
 
-    pub fn remove(&mut self, bytes: usize) {
+    pub fn remove(&mut self, bytes: usize, rope: &Rope, wrap_at: usize) {
         let mut key = self.cursor;
+        let cursor = key.unwrap();
         {
             let line = &mut self.arena[key.unwrap()];
             line.end -= bytes;
@@ -144,6 +149,7 @@ impl VisualLines {
             line.end -= bytes;
             key = line.next;
         }
+        self.wrap(cursor, rope, wrap_at);
     }
 
     pub fn merge_next(&mut self) -> &Line {
@@ -156,22 +162,6 @@ impl VisualLines {
         a.next = b.next;
         a.end = b.end;
         a
-    }
-
-    pub fn merge_prev(&mut self) -> &Line {
-        let c_key = self.cursor.unwrap();
-        let b_key = self.arena[c_key].prev.unwrap();
-        let b = self.arena.remove(b_key).unwrap();
-        if let Some(a_key) = b.prev {
-            self.arena[a_key].next = Some(c_key);
-        }
-        if self.start.unwrap() == b_key {
-            self.start = Some(c_key);
-        }
-        let c = &mut self.arena[c_key];
-        c.prev = b.prev;
-        c.start = b.start;
-        c
     }
 }
 

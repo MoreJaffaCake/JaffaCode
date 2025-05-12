@@ -96,7 +96,7 @@ impl Editor {
     pub fn delete_char_forward(&mut self) {
         let char_idx = self.position().char_idx;
         if self.rope.try_remove(char_idx..=char_idx).is_ok() {
-            self.vlines.remove(1);
+            self.vlines.remove(1, &self.rope, self.wrap_at);
         }
     }
 
@@ -104,14 +104,13 @@ impl Editor {
         let Position { mut char_idx, .. } = *self.position();
         if self.cur_x > 0 {
             char_idx -= 1;
-            self.rope.remove(char_idx..=char_idx);
-            self.vlines.remove(1);
             self.cur_x -= 1;
+            self.rope.remove(char_idx..=char_idx);
+            self.vlines.remove(1, &self.rope, self.wrap_at);
             self.position().char_idx = char_idx;
         } else if char_idx > 0 {
             char_idx -= 1;
-            self.rope.remove(char_idx..=char_idx);
-            self.vlines.remove(1);
+            self.cur_y -= 1;
             self.vlines.move_cursor_prev();
             let line_len = self
                 .vlines
@@ -119,9 +118,10 @@ impl Editor {
                 .slice(&self.rope)
                 .len_chars()
                 .saturating_sub(1);
-            let line = self.vlines.merge_next();
-            self.cur_y -= 1;
             self.cur_x = line_len as _;
+            self.rope.remove(char_idx..=char_idx);
+            self.vlines.merge_next();
+            self.vlines.remove(1, &self.rope, self.wrap_at);
             self.position().char_idx = char_idx;
         }
     }
