@@ -17,15 +17,14 @@ impl VisualLines {
                 return;
             };
             let end = line.len_bytes();
-            (
-                self.arena.insert(Line {
-                    prev: None,
-                    next: None,
-                    start: 0,
-                    end,
-                }),
+            let key = self.arena.insert(Line {
+                prev: None,
+                next: None,
+                start: 0,
                 end,
-            )
+            });
+            let key = self.wrap(key, rope, wrap_at);
+            (key, end)
         };
 
         self.start = Some(prev);
@@ -40,9 +39,33 @@ impl VisualLines {
                 end,
             });
             self.arena[prev].next = Some(key);
+            let key = self.wrap(key, rope, wrap_at);
             prev_end = end;
             prev = key;
         }
+    }
+
+    fn wrap(&mut self, mut key: Index, rope: &Rope, wrap_at: usize) -> Index {
+        loop {
+            let line = &self.arena[key];
+            let slice = line.slice(rope);
+            if slice.len_chars() <= wrap_at {
+                break;
+            } else {
+                let new_line = Line {
+                    prev: Some(key),
+                    next: line.next,
+                    start: line.start + slice.char_to_byte(wrap_at + 1),
+                    end: line.end,
+                };
+                let new_key = self.arena.insert(new_line);
+                let line = &mut self.arena[key];
+                line.end = line.start + slice.char_to_byte(wrap_at + 1);
+                line.next = Some(new_key);
+                key = new_key;
+            }
+        }
+        key
     }
 
     pub fn start(&self) -> &Line {
@@ -140,6 +163,7 @@ pub struct Line {
 }
 
 impl Line {
+    #[inline(always)]
     pub fn slice<'r>(&self, rope: &'r Rope) -> RopeSlice<'r> {
         rope.byte_slice(self.start..self.end)
     }

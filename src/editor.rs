@@ -34,7 +34,7 @@ impl Editor {
         if instance.rope.char(len_chars - 1) != '\n' {
             instance.rope.insert_char(len_chars, '\n');
         }
-        instance.vlines.regenerate(&instance.rope, 100);
+        instance.vlines.regenerate(&instance.rope, 40);
         instance
     }
 

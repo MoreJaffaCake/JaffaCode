@@ -46,6 +46,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
         Editor::new(
             "Pane 1:
 Edit this text.
+To prevent GitHub Actions matrix jobs from being cancelled when one fails, set the fail-fast option to false.
 Use PageUp/PageDown to switch.",
         ),
         Editor::new(
@@ -61,7 +62,7 @@ Another text buffer.",
         terminal.draw(|f| {
             let cols = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Fill(1), Constraint::Fill(2)])
+                .constraints([Constraint::Min(43), Constraint::Fill(2)])
                 .split(f.area());
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
