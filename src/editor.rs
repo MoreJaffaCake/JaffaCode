@@ -115,7 +115,7 @@ impl Editor {
             mut char_idx,
             ..
         } = *self.position();
-        if char_idx == self.rope.len_chars().saturating_sub(1) {
+        if char_idx >= self.rope.len_chars() {
             return;
         }
         if trailing_spaces > 0 {
@@ -168,7 +168,9 @@ impl Editor {
     pub fn move_cursor_up(&mut self) {
         if self.cur_y > 0 {
             self.cur_y -= 1;
-            self.vlines.move_cursor_prev();
+            if self.vlines.cursor_idx() > self.cur_y as usize {
+                self.vlines.move_cursor_prev();
+            }
             self.clear_position();
         }
     }
