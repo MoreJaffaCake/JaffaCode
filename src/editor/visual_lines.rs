@@ -56,47 +56,24 @@ impl VisualLines {
             let len_chars = slice.len_chars();
             debug_assert!(len_chars > 0);
             if len_chars <= wrap_at + 1 {
-                if slice.char(len_chars - 1) == '\n' {
+                let newline_idx = slice
+                    .chars()
+                    .enumerate()
+                    .find_map(|(i, c)| (c == '\n').then_some(i));
+                if newline_idx == Some(len_chars - 1) {
                     break;
-                } else if let Some(next) = line.next {
-                    let next_line = self.arena.remove(next).unwrap();
-                    let line = &mut self.arena[key];
-                    line.next = next_line.next;
-                    line.end = next_line.end;
-                    if let Some(next_next) = next_line.next {
-                        self.arena[next_next].prev = Some(key);
-                    }
+                } else if let Some(newline_idx) = newline_idx {
+                    key = self.split_line(key, newline_idx + 1);
+                } else if line.next.is_some() {
+                    self.merge_next(key);
                 } else {
                     todo!("no EOF new line")
                 }
             } else {
-                let next = line.next;
-                let new_line = Line {
-                    prev: Some(key),
-                    next,
-                    start: line.start + slice.char_to_byte(wrap_at),
-                    end: line.end,
-                };
-                debug_assert!(new_line.start != new_line.end);
-                let new_key = self.arena.insert(new_line);
-                if let Some(next) = next {
-                    self.arena[next].prev = Some(new_key);
-                }
-                let line = &mut self.arena[key];
-                line.end = line.start + slice.char_to_byte(wrap_at);
-                line.next = Some(new_key);
-                key = new_key;
+                key = self.split_line(key, wrap_at);
             }
         }
         key
-    }
-
-    pub fn start(&self) -> &Line {
-        &self.arena[self.start.unwrap()]
-    }
-
-    pub fn next_line(&self, line: &Line) -> Option<&Line> {
-        Some(&self.arena[line.next?])
     }
 
     pub fn iter(&self) -> LineIterator {
@@ -152,16 +129,37 @@ impl VisualLines {
         self.wrap(cursor, rope, wrap_at);
     }
 
-    pub fn merge_next(&mut self) -> &Line {
-        let a_key = self.cursor.unwrap();
-        let b = self.arena.remove(self.arena[a_key].next.unwrap()).unwrap();
+    #[inline]
+    fn merge_next(&mut self, key: Index) {
+        let b = self.arena.remove(self.arena[key].next.unwrap()).unwrap();
         if let Some(c_key) = b.next {
-            self.arena[c_key].prev = Some(a_key);
+            self.arena[c_key].prev = Some(key);
         }
-        let a = &mut self.arena[a_key];
+        let a = &mut self.arena[key];
         a.next = b.next;
         a.end = b.end;
-        a
+    }
+
+    #[inline]
+    fn split_line(&mut self, key: Index, char_idx: usize) -> Index {
+        let line = &self.arena[key];
+        let split_byte = line.start + char_idx;
+        let next = line.next;
+        let new_line = Line {
+            prev: Some(key),
+            next,
+            start: split_byte,
+            end: line.end,
+        };
+        debug_assert!(new_line.start != new_line.end);
+        let new_key = self.arena.insert(new_line);
+        if let Some(next) = next {
+            self.arena[next].prev = Some(new_key);
+        }
+        let line = &mut self.arena[key];
+        line.end = split_byte;
+        line.next = Some(new_key);
+        new_key
     }
 }
 

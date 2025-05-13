@@ -78,6 +78,8 @@ impl Editor {
             char_idx += trailing_spaces;
         }
         self.rope.insert_char(char_idx, c);
+        self.vlines
+            .insert(trailing_spaces + 1, &self.rope, self.wrap_at);
         self.position().char_idx += 1;
         if c == '\n' {
             self.vlines.move_cursor_next();
@@ -86,8 +88,6 @@ impl Editor {
         } else {
             self.cur_x += 1;
         }
-        self.vlines
-            .insert(trailing_spaces + 1, &self.rope, self.wrap_at);
         let pos = self.position();
         pos.char_idx = char_idx + 1;
         pos.trailing_spaces = 0;
@@ -120,7 +120,6 @@ impl Editor {
                 .saturating_sub(1);
             self.cur_x = line_len as _;
             self.rope.remove(char_idx..=char_idx);
-            self.vlines.merge_next();
             self.vlines.remove(1, &self.rope, self.wrap_at);
             self.position().char_idx = char_idx;
         }
