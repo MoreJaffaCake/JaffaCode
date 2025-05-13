@@ -94,10 +94,25 @@ impl Editor {
     }
 
     pub fn delete_char_forward(&mut self) {
-        let char_idx = self.position().char_idx;
-        if self.rope.try_remove(char_idx..=char_idx).is_ok() {
-            self.vlines.remove(1, &self.rope, self.wrap_at);
+        let Position {
+            trailing_spaces,
+            mut char_idx,
+        } = *self.position();
+        if char_idx == self.rope.len_chars().saturating_sub(1) {
+            return;
         }
+        if trailing_spaces > 0 {
+            self.rope
+                .insert(char_idx, &self.white_spaces[..trailing_spaces]);
+            self.vlines
+                .insert(trailing_spaces, &self.rope, self.wrap_at);
+            char_idx += trailing_spaces;
+        }
+        self.rope.remove(char_idx..=char_idx);
+        self.vlines.remove(1, &self.rope, self.wrap_at);
+        let pos = self.position();
+        pos.char_idx = char_idx;
+        pos.trailing_spaces = 0;
     }
 
     pub fn delete_char_backward(&mut self) {
