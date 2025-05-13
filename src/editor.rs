@@ -11,6 +11,7 @@ pub struct Editor {
     cur_y: u16,
     cur_x: u16,
     white_spaces: String,
+    vertical_spaces: String,
     vlines: visual_lines::VisualLines,
     wrap_at: usize,
 }
@@ -19,6 +20,7 @@ pub struct Editor {
 struct Position {
     trailing_spaces: usize,
     char_idx: usize,
+    newlines: usize,
 }
 
 impl Editor {
@@ -29,6 +31,7 @@ impl Editor {
             cur_y: 0,
             cur_x: 0,
             white_spaces: std::iter::repeat(' ').take(200).collect::<String>(),
+            vertical_spaces: std::iter::repeat('\n').take(200).collect::<String>(),
             vlines: Default::default(),
             wrap_at: 40,
         };
@@ -44,9 +47,13 @@ impl Editor {
         if self.position.is_none() {
             let line = self.vlines.cursor();
             let mut char_idx = self.rope.byte_to_char(line.start);
+            let newlines = self.cur_y as usize - self.vlines.cursor_idx();
             let trailing_spaces;
             let line_len = line.slice(&self.rope).len_chars().saturating_sub(1);
-            if line_len >= self.cur_x as usize {
+            if newlines > 0 {
+                char_idx = line.end;
+                trailing_spaces = self.cur_x as usize;
+            } else if line_len >= self.cur_x as usize {
                 char_idx += self.cur_x as usize;
                 trailing_spaces = 0;
             } else {
@@ -56,6 +63,7 @@ impl Editor {
             self.position = Some(Position {
                 trailing_spaces,
                 char_idx,
+                newlines,
             });
         }
 
@@ -71,7 +79,14 @@ impl Editor {
         let Position {
             trailing_spaces,
             mut char_idx,
+            mut newlines,
         } = *self.position();
+        if newlines > 0 {
+            self.rope
+                .insert(char_idx, &self.vertical_spaces[..newlines]);
+            self.vlines.insert_newlines(newlines);
+            char_idx += newlines.saturating_sub(1);
+        }
         if trailing_spaces > 0 {
             self.rope
                 .insert(char_idx, &self.white_spaces[..trailing_spaces]);
@@ -91,12 +106,14 @@ impl Editor {
         let pos = self.position();
         pos.char_idx = char_idx + 1;
         pos.trailing_spaces = 0;
+        pos.newlines = 0;
     }
 
     pub fn delete_char_forward(&mut self) {
         let Position {
             trailing_spaces,
             mut char_idx,
+            ..
         } = *self.position();
         if char_idx == self.rope.len_chars().saturating_sub(1) {
             return;
@@ -116,27 +133,35 @@ impl Editor {
     }
 
     pub fn delete_char_backward(&mut self) {
-        let Position { mut char_idx, .. } = *self.position();
+        let Position {
+            mut char_idx,
+            trailing_spaces,
+            newlines,
+        } = *self.position();
         if self.cur_x > 0 {
-            char_idx -= 1;
             self.cur_x -= 1;
-            self.rope.remove(char_idx..=char_idx);
-            self.vlines.remove(1, &self.rope, self.wrap_at);
-            self.position().char_idx = char_idx;
+            if trailing_spaces == 0 {
+                char_idx -= 1;
+                self.rope.remove(char_idx..=char_idx);
+                self.vlines.remove(1, &self.rope, self.wrap_at);
+                self.position().char_idx = char_idx;
+            }
         } else if char_idx > 0 {
-            char_idx -= 1;
             self.cur_y -= 1;
-            self.vlines.move_cursor_prev();
-            let line_len = self
-                .vlines
-                .cursor()
-                .slice(&self.rope)
-                .len_chars()
-                .saturating_sub(1);
-            self.cur_x = line_len as _;
-            self.rope.remove(char_idx..=char_idx);
-            self.vlines.remove(1, &self.rope, self.wrap_at);
-            self.position().char_idx = char_idx;
+            if newlines == 0 {
+                char_idx -= 1;
+                self.vlines.move_cursor_prev();
+                let line_len = self
+                    .vlines
+                    .cursor()
+                    .slice(&self.rope)
+                    .len_chars()
+                    .saturating_sub(1);
+                self.cur_x = line_len as _;
+                self.rope.remove(char_idx..=char_idx);
+                self.vlines.remove(1, &self.rope, self.wrap_at);
+                self.position().char_idx = char_idx;
+            }
         }
     }
 

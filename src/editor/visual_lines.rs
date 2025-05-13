@@ -6,6 +6,7 @@ pub struct VisualLines {
     arena: Arena<Line>,
     start: Option<Index>,
     cursor: Option<Index>,
+    cursor_idx: usize,
 }
 
 impl VisualLines {
@@ -29,6 +30,7 @@ impl VisualLines {
 
         self.start = Some(prev);
         self.cursor = Some(prev);
+        self.cursor_idx = 0;
 
         for line in it {
             let len_bytes = line.len_bytes();
@@ -54,13 +56,12 @@ impl VisualLines {
             let line = &self.arena[key];
             let slice = line.slice(rope);
             let len_chars = slice.len_chars();
-            debug_assert!(len_chars > 0);
             if len_chars <= wrap_at + 1 {
                 let newline_idx = slice
                     .chars()
                     .enumerate()
                     .find_map(|(i, c)| (c == '\n').then_some(i));
-                if newline_idx == Some(len_chars - 1) {
+                if newline_idx == Some(len_chars.saturating_sub(1)) {
                     break;
                 } else if let Some(newline_idx) = newline_idx {
                     key = self.split_line(key, newline_idx + 1);
@@ -76,6 +77,7 @@ impl VisualLines {
         key
     }
 
+    #[inline(always)]
     pub fn iter(&self) -> LineIterator {
         LineIterator {
             arena: &self.arena,
@@ -83,16 +85,28 @@ impl VisualLines {
         }
     }
 
+    #[inline(always)]
     pub fn cursor(&self) -> &Line {
         &self.arena[self.cursor.unwrap()]
     }
 
-    pub fn move_cursor_prev(&mut self) {
-        self.cursor = self.arena[self.cursor.unwrap()].prev
+    #[inline(always)]
+    pub fn cursor_idx(&self) -> usize {
+        self.cursor_idx
     }
 
+    #[inline(always)]
+    pub fn move_cursor_prev(&mut self) {
+        self.cursor = self.arena[self.cursor.unwrap()].prev;
+        self.cursor_idx -= 1;
+    }
+
+    #[inline(always)]
     pub fn move_cursor_next(&mut self) {
-        self.cursor = self.arena[self.cursor.unwrap()].next
+        if let Some(next) = self.arena[self.cursor.unwrap()].next {
+            self.cursor = Some(next);
+            self.cursor_idx += 1;
+        }
     }
 
     pub fn insert(&mut self, bytes: usize, rope: &Rope, wrap_at: usize) {
@@ -127,6 +141,27 @@ impl VisualLines {
             key = line.next;
         }
         self.wrap(cursor, rope, wrap_at);
+    }
+
+    pub fn insert_newlines(&mut self, n: usize) {
+        let mut prev = self.cursor.unwrap();
+        let line = &self.arena[prev];
+        let mut prev_end = line.end;
+        let next = line.next;
+        for _ in 0..n {
+            let key = self.arena.insert(Line {
+                prev: Some(prev),
+                next: None,
+                start: prev_end,
+                end: prev_end + 1,
+            });
+            self.arena[prev].next = Some(key);
+            prev = key;
+            prev_end += 1;
+        }
+        self.arena[prev].next = next;
+        self.cursor = Some(prev);
+        self.cursor_idx += n;
     }
 
     #[inline]
