@@ -96,7 +96,7 @@ impl Editor {
         self.vlines
             .insert(trailing_spaces + 1, &self.rope, self.wrap_at);
         self.position().char_idx += 1;
-        if c == '\n' {
+        if c == '\n' || self.cur_x as usize + 1 >= self.wrap_at {
             self.vlines.move_cursor_next();
             self.cur_y += 1;
             self.cur_x = 0;
@@ -189,7 +189,13 @@ impl Editor {
     }
 
     pub fn move_cursor_right(&mut self) {
-        self.cur_x += 1;
+        if self.cur_x as usize + 1 < self.wrap_at {
+            self.cur_x += 1;
+        } else {
+            self.cur_x = 0;
+            self.cur_y += 1;
+            self.vlines.move_cursor_next();
+        }
         self.clear_position();
     }
 
