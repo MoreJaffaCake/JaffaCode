@@ -29,7 +29,9 @@ impl Editor {
             rope.insert_char(len_chars, '\n');
         }
         let vlines = VLines::new(40, &rope);
-        let mut view = View::new(vlines.start());
+        let mut view = View::new(vlines.first());
+        view.scroll_down(&vlines);
+        view.move_cursor_next(&vlines);
         view.scroll_down(&vlines);
         view.move_cursor_next(&vlines);
         Self {
@@ -52,6 +54,7 @@ impl Editor {
                 &self.vlines,
                 &self.rope,
             ));
+            dbg!(self.position.as_ref().unwrap());
         }
         self.position.as_mut().unwrap()
     }
@@ -172,7 +175,7 @@ impl Editor {
     pub fn move_cursor_up(&mut self) {
         if self.cur_y > 0 {
             self.cur_y -= 1;
-            if self.view.cursor_idx > self.cur_y as usize {
+            if self.view.cursor_idx > self.cur_y as usize + self.view.start_idx {
                 self.view.move_cursor_prev(&self.vlines);
             }
             self.clear_position();

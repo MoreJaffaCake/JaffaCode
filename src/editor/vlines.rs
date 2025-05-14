@@ -3,27 +3,27 @@ use ropey::*;
 use slotmap::*;
 
 new_key_type! {
-    pub struct Index;
+    pub struct Key;
 }
 
 #[derive(derive_more::Debug, Default)]
 pub struct VLines {
     #[debug(skip)]
-    arena: SlotMap<Index, Line>,
+    arena: SlotMap<Key, Line>,
     #[debug(skip)]
-    empty: Index,
+    empty: Key,
     #[debug(skip)]
-    start: Index,
+    first: Key,
     wrap_at: usize,
 }
 
 impl VLines {
     pub fn new(wrap_at: usize, rope: &Rope) -> Self {
-        let mut arena = SlotMap::<Index, Line>::with_key();
+        let mut arena = SlotMap::<Key, Line>::with_key();
         let empty = arena.insert_with_key(|k| Line {
             prev: k,
             next: k,
-            start: 0,
+            start_byte: 0,
             end: 0,
         });
         arena.remove(empty);
@@ -31,7 +31,7 @@ impl VLines {
         let mut instance = Self {
             arena,
             empty,
-            start: empty,
+            first: empty,
             wrap_at,
         };
         let mut it = rope.lines();
@@ -42,14 +42,14 @@ impl VLines {
             let key = instance.arena.insert(Line {
                 prev: empty,
                 next: empty,
-                start: 0,
+                start_byte: 0,
                 end,
             });
             let key = instance.wrap(key, rope);
             (key, end)
         };
 
-        instance.start = prev;
+        instance.first = prev;
 
         for line in it {
             let len_bytes = line.len_bytes();
@@ -60,7 +60,7 @@ impl VLines {
             let key = instance.arena.insert(Line {
                 prev: prev,
                 next: empty,
-                start: prev_end,
+                start_byte: prev_end,
                 end,
             });
             instance.arena[prev].next = key;
@@ -76,7 +76,7 @@ impl VLines {
         self.wrap_at
     }
 
-    fn wrap(&mut self, mut key: Index, rope: &Rope) -> Index {
+    fn wrap(&mut self, mut key: Key, rope: &Rope) -> Key {
         loop {
             let line = &self.arena[key];
             let slice = line.slice(rope);
@@ -120,7 +120,7 @@ impl VLines {
             key = line.next;
         }
         while let Some(line) = self.arena.get_mut(key) {
-            line.start += bytes;
+            line.start_byte += bytes;
             line.end += bytes;
             key = line.next;
         }
@@ -135,7 +135,7 @@ impl VLines {
             key = line.next;
         }
         while let Some(line) = self.arena.get_mut(key) {
-            line.start -= bytes;
+            line.start_byte -= bytes;
             line.end -= bytes;
             key = line.next;
         }
@@ -151,7 +151,7 @@ impl VLines {
             let key = self.arena.insert(Line {
                 prev: prev,
                 next: self.empty,
-                start: prev_end,
+                start_byte: prev_end,
                 end: prev_end + 1,
             });
             self.arena[prev].next = key;
@@ -164,7 +164,7 @@ impl VLines {
     }
 
     #[inline]
-    fn merge_next(&mut self, key: Index) {
+    fn merge_next(&mut self, key: Key) {
         let b = self.arena.remove(self.arena[key].next).unwrap();
         if let Some(c) = self.arena.get_mut(b.next) {
             c.prev = key;
@@ -175,17 +175,17 @@ impl VLines {
     }
 
     #[inline]
-    fn split_line(&mut self, key: Index, char_idx: usize) -> Index {
+    fn split_line(&mut self, key: Key, char_idx: usize) -> Key {
         let line = &self.arena[key];
-        let split_byte = line.start + char_idx;
+        let split_byte = line.start_byte + char_idx;
         let next = line.next;
         let new_line = Line {
             prev: key,
             next,
-            start: split_byte,
+            start_byte: split_byte,
             end: line.end,
         };
-        debug_assert!(new_line.start != new_line.end);
+        debug_assert!(new_line.start_byte != new_line.end);
         let new_key = self.arena.insert(new_line);
         if let Some(line) = self.arena.get_mut(next) {
             line.prev = new_key;
@@ -197,45 +197,45 @@ impl VLines {
     }
 
     #[inline(always)]
-    pub fn start(&self) -> Index {
-        self.start
+    pub fn first(&self) -> Key {
+        self.first
     }
 
     #[inline(always)]
-    pub fn contains_key(&self, key: Index) -> bool {
+    pub fn contains_key(&self, key: Key) -> bool {
         self.arena.contains_key(key)
     }
 }
 
-impl std::ops::Index<Index> for VLines {
+impl std::ops::Index<Key> for VLines {
     type Output = Line;
 
-    fn index(&self, key: Index) -> &Self::Output {
+    fn index(&self, key: Key) -> &Self::Output {
         &self.arena[key]
     }
 }
 
 #[derive(derive_more::Debug)]
 pub struct Line {
-    #[debug("<Index>")]
-    pub prev: Index,
-    #[debug("<Index>")]
-    pub next: Index,
-    pub start: usize,
+    #[debug("<Key>")]
+    pub prev: Key,
+    #[debug("<Key>")]
+    pub next: Key,
+    pub start_byte: usize,
     pub end: usize,
 }
 
 impl Line {
     #[inline(always)]
     pub fn slice<'r>(&self, rope: &'r Rope) -> RopeSlice<'r> {
-        rope.byte_slice(self.start..self.end)
+        rope.byte_slice(self.start_byte..self.end)
     }
 }
 
 pub struct SliceIterator<'a, 'v, 'r> {
-    arena: &'a SlotMap<Index, Line>,
+    arena: &'a SlotMap<Key, Line>,
     rope: &'r Rope,
-    index: Index,
+    index: Key,
     view: &'v View,
 }
 

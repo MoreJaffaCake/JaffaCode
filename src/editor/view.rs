@@ -3,11 +3,11 @@ use ropey::*;
 
 #[derive(derive_more::Debug)]
 pub struct View {
-    #[debug("<Index>")]
-    pub start: Index,
+    #[debug(skip)]
+    pub start: Key,
     pub start_idx: usize,
-    #[debug("<Index>")]
-    pub cursor: Index,
+    #[debug(skip)]
+    pub cursor: Key,
     pub cursor_idx: usize,
     pub hscroll: usize,
 }
@@ -20,7 +20,7 @@ pub struct Position {
 }
 
 impl View {
-    pub fn new(start: Index) -> Self {
+    pub fn new(start: Key) -> Self {
         Self {
             start,
             start_idx: 0,
@@ -74,14 +74,13 @@ impl View {
 
     pub fn get_position(&mut self, x: usize, y: usize, vlines: &VLines, rope: &Rope) -> Position {
         let line = &vlines[self.cursor];
-        let mut char_idx = rope.byte_to_char(line.start) + self.hscroll;
-        let mut newlines = y.saturating_sub(self.cursor_idx);
+        let mut char_idx = rope.byte_to_char(line.start_byte) + self.hscroll;
+        let mut newlines = (self.start_idx + y).saturating_sub(self.cursor_idx);
         let trailing_spaces;
         let line_len = line.slice(rope).len_chars().saturating_sub(1);
         if newlines > 0 {
             char_idx = rope.byte_to_char(line.end);
             trailing_spaces = x + self.hscroll;
-            newlines += self.start_idx;
         } else if line_len >= x {
             char_idx += x;
             trailing_spaces = 0;

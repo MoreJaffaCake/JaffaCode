@@ -139,13 +139,13 @@ Another text buffer.",
                     code: KeyCode::PageUp,
                     ..
                 }) => {
-                    scroll = scroll.saturating_sub(10);
+                    scroll = scroll.saturating_sub(5);
                 }
                 Event::Key(KeyEvent {
                     code: KeyCode::PageDown,
                     ..
                 }) => {
-                    scroll += 10;
+                    scroll += 5;
                 }
                 _ => {
                     editors[active_editor].handle_event(event);
