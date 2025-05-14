@@ -218,11 +218,7 @@ impl Editor {
             .enumerate()
             .find_map(|(i, c)| (!c.is_whitespace()).then_some(i as u16))
             .unwrap_or(0);
-        if new_cur_x == self.cur_x {
-            self.cur_x = 0;
-        } else {
-            self.cur_x = new_cur_x
-        }
+        self.cur_x = new_cur_x;
         self.clear_position();
     }
 
