@@ -29,8 +29,10 @@ impl Editor {
             rope.insert_char(len_chars, '\n');
         }
         let vlines = VLines::new(40, &rope);
-        let view = View::new(vlines.start());
-        let mut instance = Self {
+        let mut view = View::new(vlines.start());
+        view.scroll_down(&vlines);
+        view.move_cursor_next(&vlines);
+        Self {
             rope,
             vlines,
             view,
@@ -39,10 +41,7 @@ impl Editor {
             cur_x: 0,
             hspaces: std::iter::repeat(' ').take(200).collect::<String>(),
             vspaces: std::iter::repeat('\n').take(200).collect::<String>(),
-        };
-        //instance.vlines.move_start_next();
-        //instance.vlines.move_cursor_next();
-        instance
+        }
     }
 
     fn position(&mut self) -> &mut Position {
@@ -119,7 +118,7 @@ impl Editor {
         let Position {
             mut char_idx,
             trailing_spaces,
-            mut newlines,
+            newlines,
         } = *self.position();
         if char_idx == 0 {
             return;

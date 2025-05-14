@@ -5,6 +5,7 @@ use ropey::*;
 pub struct View {
     #[debug("<Index>")]
     pub start: Index,
+    pub start_idx: usize,
     #[debug("<Index>")]
     pub cursor: Index,
     pub cursor_idx: usize,
@@ -22,6 +23,7 @@ impl View {
     pub fn new(start: Index) -> Self {
         Self {
             start,
+            start_idx: 0,
             cursor: start,
             cursor_idx: 0,
             hscroll: 0,
@@ -32,6 +34,7 @@ impl View {
     pub fn scroll_up(&mut self, vlines: &VLines) {
         self.start = vlines[self.start].prev;
         debug_assert!(vlines.contains_key(self.start));
+        self.start_idx -= 1;
     }
 
     #[inline(always)]
@@ -39,6 +42,7 @@ impl View {
         let next = vlines[self.start].next;
         if vlines.contains_key(next) {
             self.start = next;
+            self.start_idx += 1;
         }
     }
 
@@ -71,12 +75,13 @@ impl View {
     pub fn get_position(&mut self, x: usize, y: usize, vlines: &VLines, rope: &Rope) -> Position {
         let line = &vlines[self.cursor];
         let mut char_idx = rope.byte_to_char(line.start) + self.hscroll;
-        let newlines = y.saturating_sub(self.cursor_idx);
+        let mut newlines = y.saturating_sub(self.cursor_idx);
         let trailing_spaces;
         let line_len = line.slice(rope).len_chars().saturating_sub(1);
         if newlines > 0 {
             char_idx = rope.byte_to_char(line.end);
             trailing_spaces = x + self.hscroll;
+            newlines += self.start_idx;
         } else if line_len >= x {
             char_idx += x;
             trailing_spaces = 0;
