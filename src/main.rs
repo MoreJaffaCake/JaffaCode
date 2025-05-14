@@ -45,6 +45,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
     let mut editors = vec![
         Editor::new(
             "Pane 1:
+
 Edit this text.
 ddddddddddddddddddddddddddddddddddddddefg
 To prevent GitHub Actions matrix jobs from being cancelled when one fails, set the fail-fast option to false.
@@ -118,6 +119,10 @@ Another text buffer.",
                 ) => {
                     key.code = KeyCode::Backspace;
                 }
+                _ => {}
+            }
+
+            match event {
                 Event::Key(KeyEvent {
                     code: KeyCode::Char('w'),
                     modifiers: KeyModifiers::CONTROL,
@@ -142,10 +147,10 @@ Another text buffer.",
                 }) => {
                     scroll += 10;
                 }
-                _ => {}
+                _ => {
+                    editors[active_editor].handle_event(event);
+                }
             }
-
-            editors[active_editor].handle_event(event);
         }
     }
 }

@@ -1,72 +1,59 @@
 #[cfg(feature = "crossterm")]
 mod crossterm;
-mod visual_lines;
+mod view;
+mod vlines;
 
 use ropey::*;
+use view::*;
+use vlines::*;
 
-#[derive(Debug)]
+#[derive(derive_more::Debug)]
 pub struct Editor {
     rope: Rope,
+    vlines: VLines,
+    view: View,
     position: Option<Position>,
     cur_y: u16,
     cur_x: u16,
+    #[debug(skip)]
     hspaces: String,
+    #[debug(skip)]
     vspaces: String,
-    vlines: visual_lines::VisualLines,
-    wrap_at: usize,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Position {
-    trailing_spaces: usize,
-    char_idx: usize,
-    newlines: usize,
 }
 
 impl Editor {
     pub fn new(initial_text: &str) -> Self {
+        let mut rope = Rope::from_str(initial_text);
+        let len_chars = rope.len_chars();
+        if rope.char(len_chars - 1) != '\n' {
+            rope.insert_char(len_chars, '\n');
+        }
+        let vlines = VLines::new(40, &rope);
+        let view = View::new(vlines.start());
         let mut instance = Self {
-            rope: Rope::from_str(initial_text),
+            rope,
+            vlines,
+            view,
             position: None,
             cur_y: 0,
             cur_x: 0,
             hspaces: std::iter::repeat(' ').take(200).collect::<String>(),
             vspaces: std::iter::repeat('\n').take(200).collect::<String>(),
-            vlines: Default::default(),
-            wrap_at: 40,
         };
-        let len_chars = instance.rope.len_chars();
-        if instance.rope.char(len_chars - 1) != '\n' {
-            instance.rope.insert_char(len_chars, '\n');
-        }
-        instance.vlines.regenerate(&instance.rope, instance.wrap_at);
+        //instance.vlines.move_start_next();
+        //instance.vlines.move_cursor_next();
         instance
     }
 
     fn position(&mut self) -> &mut Position {
         if self.position.is_none() {
-            let line = self.vlines.cursor();
-            let mut char_idx = self.rope.byte_to_char(line.start);
-            let newlines = self.cur_y as usize - self.vlines.cursor_idx();
-            let trailing_spaces;
-            let line_len = line.slice(&self.rope).len_chars().saturating_sub(1);
-            if newlines > 0 {
-                char_idx = line.end;
-                trailing_spaces = self.cur_x as usize;
-            } else if line_len >= self.cur_x as usize {
-                char_idx += self.cur_x as usize;
-                trailing_spaces = 0;
-            } else {
-                char_idx += line_len;
-                trailing_spaces = self.cur_x as usize - line_len;
-            }
-            self.position = Some(Position {
-                trailing_spaces,
-                char_idx,
-                newlines,
-            });
+            self.position = Some(self.view.get_position(
+                self.cur_x as _,
+                self.cur_y as _,
+                &self.vlines,
+                &self.rope,
+            ));
         }
-
         self.position.as_mut().unwrap()
     }
 
@@ -83,7 +70,7 @@ impl Editor {
         } = *self.position();
         if newlines > 0 {
             self.rope.insert(char_idx, &self.vspaces[..newlines]);
-            self.vlines.insert_newlines(newlines);
+            self.vlines.insert_newlines(&mut self.view, newlines);
             char_idx += newlines.saturating_sub(1);
         }
         if trailing_spaces > 0 {
@@ -92,10 +79,10 @@ impl Editor {
         }
         self.rope.insert_char(char_idx, c);
         self.vlines
-            .insert(trailing_spaces + 1, &self.rope, self.wrap_at);
+            .insert(&self.view, trailing_spaces + 1, &self.rope);
         self.position().char_idx += 1;
-        if c == '\n' || self.cur_x as usize + 1 >= self.wrap_at {
-            self.vlines.move_cursor_next();
+        if c == '\n' || self.cur_x as usize + 1 >= self.vlines.wrap_at() {
+            self.view.move_cursor_next(&self.vlines);
             self.cur_y += 1;
             self.cur_x = 0;
         } else {
@@ -118,12 +105,11 @@ impl Editor {
         }
         if trailing_spaces > 0 {
             self.rope.insert(char_idx, &self.hspaces[..trailing_spaces]);
-            self.vlines
-                .insert(trailing_spaces, &self.rope, self.wrap_at);
+            self.vlines.insert(&self.view, trailing_spaces, &self.rope);
             char_idx += trailing_spaces;
         }
         self.rope.remove(char_idx..=char_idx);
-        self.vlines.remove(1, &self.rope, self.wrap_at);
+        self.vlines.remove(&mut self.view, 1, &self.rope);
         let pos = self.position();
         pos.char_idx = char_idx;
         pos.trailing_spaces = 0;
@@ -133,40 +119,62 @@ impl Editor {
         let Position {
             mut char_idx,
             trailing_spaces,
-            newlines,
+            mut newlines,
         } = *self.position();
-        if self.cur_x > 0 {
+        if char_idx == 0 {
+            return;
+        } else if self.cur_x > 0 {
             self.cur_x -= 1;
-            if trailing_spaces == 0 {
-                char_idx -= 1;
-                self.rope.remove(char_idx..=char_idx);
-                self.vlines.remove(1, &self.rope, self.wrap_at);
-                self.position().char_idx = char_idx;
-            }
-        } else if char_idx > 0 {
+        } else if self.view.hscroll > 0 {
+            self.view.scroll_left(1);
+        } else if self.cur_y > 0 {
             self.cur_y -= 1;
             if newlines == 0 {
                 char_idx -= 1;
-                self.vlines.move_cursor_prev();
-                let line_len = self
-                    .vlines
-                    .cursor()
+                self.view.move_cursor_prev(&self.vlines);
+                let line_len = self.vlines[self.view.cursor]
                     .slice(&self.rope)
                     .len_chars()
                     .saturating_sub(1);
                 self.cur_x = line_len as _;
                 self.rope.remove(char_idx..=char_idx);
-                self.vlines.remove(1, &self.rope, self.wrap_at);
+                self.vlines.remove(&mut self.view, 1, &self.rope);
                 self.position().char_idx = char_idx;
+            } else {
+                self.position().newlines -= 1;
+                if newlines == 1 {
+                    let line_len = self.vlines[self.view.cursor]
+                        .slice(&self.rope)
+                        .len_chars()
+                        .saturating_sub(1);
+                    self.cur_x = line_len as _;
+                }
             }
+            return;
+        } else {
+            self.view.scroll_up(&self.vlines);
+            self.view.move_cursor_prev(&self.vlines);
+            let line_len = self.vlines[self.view.cursor]
+                .slice(&self.rope)
+                .len_chars()
+                .saturating_sub(1);
+            self.cur_x = line_len as _;
+        }
+        if trailing_spaces == 0 {
+            char_idx -= 1;
+            self.rope.remove(char_idx..=char_idx);
+            self.vlines.remove(&mut self.view, 1, &self.rope);
+            self.position().char_idx = char_idx;
+        } else {
+            self.position().trailing_spaces -= 1;
         }
     }
 
     pub fn move_cursor_up(&mut self) {
         if self.cur_y > 0 {
             self.cur_y -= 1;
-            if self.vlines.cursor_idx() > self.cur_y as usize {
-                self.vlines.move_cursor_prev();
+            if self.view.cursor_idx > self.cur_y as usize {
+                self.view.move_cursor_prev(&self.vlines);
             }
             self.clear_position();
         }
@@ -174,7 +182,7 @@ impl Editor {
 
     pub fn move_cursor_down(&mut self) {
         self.cur_y += 1;
-        self.vlines.move_cursor_next();
+        self.view.move_cursor_next(&self.vlines);
         self.clear_position();
     }
 
@@ -182,24 +190,25 @@ impl Editor {
         if self.cur_x > 0 {
             self.cur_x -= 1;
             self.clear_position();
+        } else if self.view.hscroll > 0 {
+            self.view.scroll_left(1);
+            self.clear_position();
         }
     }
 
     pub fn move_cursor_right(&mut self) {
-        if self.cur_x as usize + 1 < self.wrap_at {
+        if self.cur_x as usize + 1 < self.vlines.wrap_at() {
             self.cur_x += 1;
         } else {
             self.cur_x = 0;
             self.cur_y += 1;
-            self.vlines.move_cursor_next();
+            self.view.move_cursor_next(&self.vlines);
         }
         self.clear_position();
     }
 
     pub fn move_cursor_at_start(&mut self) {
-        self.cur_x = self
-            .vlines
-            .cursor()
+        self.cur_x = self.vlines[self.view.cursor]
             .slice(&self.rope)
             .chars()
             .enumerate()
@@ -208,7 +217,7 @@ impl Editor {
     }
 
     pub fn move_cursor_at_end(&mut self) {
-        let slice = self.vlines.cursor().slice(&self.rope);
+        let slice = self.vlines[self.view.cursor].slice(&self.rope);
         let len_chars = slice.len_chars();
         self.cur_x = slice
             .chars_at(len_chars)
@@ -219,7 +228,7 @@ impl Editor {
     }
 
     pub fn get_display_lines(&self) -> impl Iterator<Item = RopeSlice> {
-        self.vlines.iter().map(|line| line.slice(&self.rope))
+        self.vlines.slices(&self.view, &self.rope)
     }
 
     pub fn cursor_position<T: From<u16>>(&self) -> (T, T) {

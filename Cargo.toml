@@ -1,5 +1,5 @@
 [package]
-name = "tmp-xqerm6"
+name = "JaffaCode"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,8 +7,9 @@ edition = "2024"
 default = ["crossterm"]
 
 [dependencies]
-crossterm = { version = "*", optional = true}
-slotmap = "*"
+crossterm = { version = "*", optional = true }
+derive_more = { version = "*", features = ["debug"] }
 ratatui = "*"
 ropey = "*"
+slotmap = "*"
 libc-system = "*"
