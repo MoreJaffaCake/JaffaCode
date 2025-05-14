@@ -207,12 +207,18 @@ impl Editor {
     }
 
     pub fn move_cursor_at_start(&mut self) {
-        self.cur_x = self.vlines[self.view.cursor]
+        let new_cur_x = self.vlines[self.view.cursor]
             .slice(&self.rope)
             .chars()
             .enumerate()
             .find_map(|(i, c)| (!c.is_whitespace()).then_some(i as u16))
-            .unwrap_or(0)
+            .unwrap_or(0);
+        if new_cur_x == self.cur_x {
+            self.cur_x = 0;
+        } else {
+            self.cur_x = new_cur_x
+        }
+        self.clear_position();
     }
 
     pub fn move_cursor_at_end(&mut self) {
@@ -223,7 +229,8 @@ impl Editor {
             .reversed()
             .enumerate()
             .find_map(|(i, c)| (!c.is_whitespace()).then_some((len_chars - i) as u16))
-            .unwrap_or(len_chars.saturating_sub(1) as u16)
+            .unwrap_or(len_chars.saturating_sub(1) as u16);
+        self.clear_position();
     }
 
     pub fn get_display_lines(&self) -> impl Iterator<Item = RopeSlice> {
