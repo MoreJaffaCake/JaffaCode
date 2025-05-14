@@ -206,6 +206,11 @@ impl Editor {
         self.clear_position();
     }
 
+    pub fn move_cursor_at_0(&mut self) {
+        self.cur_x = 0;
+        self.clear_position();
+    }
+
     pub fn move_cursor_at_start(&mut self) {
         let new_cur_x = self.vlines[self.view.cursor]
             .slice(&self.rope)

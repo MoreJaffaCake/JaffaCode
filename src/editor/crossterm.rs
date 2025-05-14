@@ -5,6 +5,9 @@ impl Editor {
     pub fn handle_event(&mut self, event: Event) {
         if let Event::Key(key) = event {
             match key.code {
+                KeyCode::Char('0') => {
+                    self.move_cursor_at_0();
+                }
                 KeyCode::Char(c) => {
                     self.insert_char(c);
                 }
