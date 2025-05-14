@@ -10,8 +10,8 @@ pub struct Editor {
     position: Option<Position>,
     cur_y: u16,
     cur_x: u16,
-    white_spaces: String,
-    vertical_spaces: String,
+    hspaces: String,
+    vspaces: String,
     vlines: visual_lines::VisualLines,
     wrap_at: usize,
 }
@@ -30,8 +30,8 @@ impl Editor {
             position: None,
             cur_y: 0,
             cur_x: 0,
-            white_spaces: std::iter::repeat(' ').take(200).collect::<String>(),
-            vertical_spaces: std::iter::repeat('\n').take(200).collect::<String>(),
+            hspaces: std::iter::repeat(' ').take(200).collect::<String>(),
+            vspaces: std::iter::repeat('\n').take(200).collect::<String>(),
             vlines: Default::default(),
             wrap_at: 40,
         };
@@ -82,14 +82,12 @@ impl Editor {
             newlines,
         } = *self.position();
         if newlines > 0 {
-            self.rope
-                .insert(char_idx, &self.vertical_spaces[..newlines]);
+            self.rope.insert(char_idx, &self.vspaces[..newlines]);
             self.vlines.insert_newlines(newlines);
             char_idx += newlines.saturating_sub(1);
         }
         if trailing_spaces > 0 {
-            self.rope
-                .insert(char_idx, &self.white_spaces[..trailing_spaces]);
+            self.rope.insert(char_idx, &self.hspaces[..trailing_spaces]);
             char_idx += trailing_spaces;
         }
         self.rope.insert_char(char_idx, c);
@@ -119,8 +117,7 @@ impl Editor {
             return;
         }
         if trailing_spaces > 0 {
-            self.rope
-                .insert(char_idx, &self.white_spaces[..trailing_spaces]);
+            self.rope.insert(char_idx, &self.hspaces[..trailing_spaces]);
             self.vlines
                 .insert(trailing_spaces, &self.rope, self.wrap_at);
             char_idx += trailing_spaces;
