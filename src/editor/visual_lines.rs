@@ -1,9 +1,13 @@
-use generational_arena::*;
 use ropey::*;
+use slotmap::*;
+
+new_key_type! {
+    struct Index;
+}
 
 #[derive(Debug, Default)]
 pub struct VisualLines {
-    arena: Arena<Line>,
+    arena: SlotMap<Index, Line>,
     start: Option<Index>,
     cursor: Option<Index>,
     cursor_idx: usize,
@@ -214,7 +218,7 @@ impl Line {
 }
 
 pub struct LineIterator<'a> {
-    arena: &'a Arena<Line>,
+    arena: &'a SlotMap<Index, Line>,
     index: Option<Index>,
 }
 

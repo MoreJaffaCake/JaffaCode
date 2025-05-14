@@ -8,7 +8,7 @@ default = ["crossterm"]
 
 [dependencies]
 crossterm = { version = "*", optional = true}
-generational-arena = "*"
+slotmap = "*"
 ratatui = "*"
 ropey = "*"
 libc-system = "*"

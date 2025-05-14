@@ -79,7 +79,7 @@ impl Editor {
         let Position {
             trailing_spaces,
             mut char_idx,
-            mut newlines,
+            newlines,
         } = *self.position();
         if newlines > 0 {
             self.rope
