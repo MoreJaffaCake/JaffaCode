@@ -93,7 +93,7 @@ impl VLines {
                 } else if self.arena.contains_key(line.next) {
                     self.merge_next(key);
                 } else {
-                    unreachable!();
+                    unreachable!("missing newline at EOF");
                 }
             } else {
                 key = self.split_line(key, self.wrap_at);

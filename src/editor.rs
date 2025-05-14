@@ -134,22 +134,14 @@ impl Editor {
             if newlines == 0 {
                 char_idx -= 1;
                 self.view.move_cursor_prev(&self.vlines);
-                let line_len = self.vlines[self.view.cursor]
-                    .slice(&self.rope)
-                    .len_chars()
-                    .saturating_sub(1);
-                self.cur_x = line_len as _;
+                self.cur_x = self.view.len_chars(&self.vlines, &self.rope);
                 self.rope.remove(char_idx..=char_idx);
                 self.vlines.remove(&mut self.view, 1, &self.rope);
                 self.position().char_idx = char_idx;
             } else {
                 self.position().newlines -= 1;
                 if newlines == 1 {
-                    let line_len = self.vlines[self.view.cursor]
-                        .slice(&self.rope)
-                        .len_chars()
-                        .saturating_sub(1);
-                    self.cur_x = line_len as _;
+                    self.cur_x = self.view.len_chars(&self.vlines, &self.rope);
                 }
             }
             return;
@@ -163,6 +155,9 @@ impl Editor {
             self.cur_x = line_len as _;
         }
         if trailing_spaces == 0 {
+            if char_idx == self.rope.len_chars() {
+                char_idx -= 1;
+            }
             char_idx -= 1;
             self.rope.remove(char_idx..=char_idx);
             self.vlines.remove(&mut self.view, 1, &self.rope);
@@ -191,11 +186,20 @@ impl Editor {
     pub fn move_cursor_left(&mut self) {
         if self.cur_x > 0 {
             self.cur_x -= 1;
-            self.clear_position();
         } else if self.view.hscroll > 0 {
             self.view.scroll_left(1);
-            self.clear_position();
+        } else {
+            if self.cur_y > 0 {
+                self.cur_y -= 1;
+            } else if self.view.start_idx > 0 {
+                self.view.scroll_up(&self.vlines);
+            } else {
+                return;
+            }
+            self.view.move_cursor_prev(&self.vlines);
+            self.cur_x = self.view.len_chars(&self.vlines, &self.rope);
         }
+        self.clear_position();
     }
 
     pub fn move_cursor_right(&mut self) {
