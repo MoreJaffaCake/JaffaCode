@@ -27,7 +27,15 @@ impl Editor {
                 KeyCode::Right => {
                     self.move_cursor_right();
                 }
-                _ => {}
+                KeyCode::Home => {
+                    self.move_cursor_at_start();
+                }
+                KeyCode::End => {
+                    self.move_cursor_at_end();
+                }
+                _ => {
+                    dbg!(event);
+                }
             }
         }
     }

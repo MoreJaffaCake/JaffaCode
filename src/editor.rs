@@ -196,6 +196,28 @@ impl Editor {
         self.clear_position();
     }
 
+    pub fn move_cursor_at_start(&mut self) {
+        self.cur_x = self
+            .vlines
+            .cursor()
+            .slice(&self.rope)
+            .chars()
+            .enumerate()
+            .find_map(|(i, c)| (!c.is_whitespace()).then_some(i as u16))
+            .unwrap_or(0)
+    }
+
+    pub fn move_cursor_at_end(&mut self) {
+        let slice = self.vlines.cursor().slice(&self.rope);
+        let len_chars = slice.len_chars();
+        self.cur_x = slice
+            .chars_at(len_chars)
+            .reversed()
+            .enumerate()
+            .find_map(|(i, c)| (!c.is_whitespace()).then_some((len_chars - i) as u16))
+            .unwrap_or(len_chars.saturating_sub(1) as u16)
+    }
+
     pub fn get_display_lines(&self) -> impl Iterator<Item = RopeSlice> {
         self.vlines.iter().map(|line| line.slice(&self.rope))
     }
