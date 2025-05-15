@@ -219,8 +219,9 @@ impl Editor {
     }
 
     pub fn move_cursor_at_start(&mut self) {
-        let new_cur_x = self.vlines[self.view.cursor]
-            .slice(&self.rope)
+        let new_cur_x = self
+            .view
+            .slice(&self.vlines, &self.rope)
             .chars()
             .enumerate()
             .find_map(|(i, c)| (!c.is_whitespace()).then_some(i as u16))
@@ -230,7 +231,7 @@ impl Editor {
     }
 
     pub fn move_cursor_at_end(&mut self) {
-        let slice = self.vlines[self.view.cursor].slice(&self.rope);
+        let slice = self.view.slice(&self.vlines, &self.rope);
         let len_chars = slice.len_chars();
         self.cur_x = slice
             .chars_at(len_chars)

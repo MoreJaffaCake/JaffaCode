@@ -26,7 +26,7 @@ impl View {
             start_idx: 0,
             cursor: start,
             cursor_idx: 0,
-            hscroll: 0,
+            hscroll: 10,
         }
     }
 
@@ -101,5 +101,18 @@ impl View {
             .slice(rope)
             .len_chars()
             .saturating_sub(1) as _
+    }
+
+    pub fn slice<'r>(&self, vlines: &VLines, rope: &'r Rope) -> RopeSlice<'r> {
+        let slice = vlines[self.cursor].slice(rope);
+        if self.hscroll > 0 {
+            if slice.len_chars() <= self.hscroll {
+                slice.slice(..0)
+            } else {
+                slice.slice(self.hscroll..)
+            }
+        } else {
+            slice
+        }
     }
 }
