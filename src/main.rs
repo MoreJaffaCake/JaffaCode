@@ -118,6 +118,7 @@ Another text buffer.",
                     },
                 ) => {
                     key.code = KeyCode::Backspace;
+                    key.modifiers = KeyModifiers::NONE;
                 }
                 _ => {}
             }

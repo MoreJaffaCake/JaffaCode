@@ -134,14 +134,14 @@ impl Editor {
             if newlines == 0 {
                 char_idx -= 1;
                 self.view.move_cursor_prev(&self.vlines);
-                self.cur_x = self.view.len_chars(&self.vlines, &self.rope);
+                self.cur_x = self.view.line_len(&self.vlines, &self.rope);
                 self.rope.remove(char_idx..=char_idx);
                 self.vlines.remove(&mut self.view, 1, &self.rope);
                 self.position().char_idx = char_idx;
             } else {
                 self.position().newlines -= 1;
                 if newlines == 1 {
-                    self.cur_x = self.view.len_chars(&self.vlines, &self.rope);
+                    self.cur_x = self.view.line_len(&self.vlines, &self.rope);
                 }
             }
             return;
@@ -191,8 +191,6 @@ impl Editor {
     pub fn move_cursor_left(&mut self) {
         if self.cur_x > 0 {
             self.cur_x -= 1;
-        } else if self.view.hscroll > 0 {
-            self.view.scroll_left(1);
         } else {
             if self.cur_y > 0 {
                 self.cur_y -= 1;
@@ -202,13 +200,13 @@ impl Editor {
                 return;
             }
             self.view.move_cursor_prev(&self.vlines);
-            self.cur_x = self.view.len_chars(&self.vlines, &self.rope);
+            self.cur_x = self.view.line_len(&self.vlines, &self.rope);
         }
         self.clear_position();
     }
 
     pub fn move_cursor_right(&mut self) {
-        if self.cur_x as usize + 1 < self.vlines.wrap_at() {
+        if self.cur_x as usize + 1 < self.vlines.wrap_at() - self.view.hscroll {
             self.cur_x += 1;
         } else {
             self.cur_x = 0;
@@ -243,7 +241,7 @@ impl Editor {
             .reversed()
             .enumerate()
             .find_map(|(i, c)| (!c.is_whitespace()).then_some((len_chars - i) as u16))
-            .unwrap_or(len_chars.saturating_sub(1) as u16);
+            .unwrap_or(0);
         self.clear_position();
     }
 
@@ -258,6 +256,7 @@ impl Editor {
     pub fn scroll_up(&mut self) {
         if self.view.scroll_up(&self.vlines) {
             self.cur_y += 1;
+            self.clear_position();
         }
     }
 
@@ -268,12 +267,14 @@ impl Editor {
             } else {
                 self.view.move_cursor_next(&self.vlines);
             }
+            self.clear_position();
         }
     }
 
     pub fn scroll_left(&mut self) {
         if self.view.scroll_left(1) {
             self.cur_x += 1;
+            self.clear_position();
         }
     }
 
@@ -282,6 +283,7 @@ impl Editor {
             if self.cur_x > 0 {
                 self.cur_x -= 1;
             }
+            self.clear_position();
         }
     }
 }

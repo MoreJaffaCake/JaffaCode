@@ -103,14 +103,15 @@ impl View {
         let mut char_idx = rope.byte_to_char(line.start_byte);
         let newlines = (self.start_idx + y).saturating_sub(self.cursor_idx);
         let trailing_spaces;
-        let line_len = line.slice(rope).len_chars().saturating_sub(1);
+        let len_chars = line.slice(rope).len_chars();
         if newlines > 0 {
             char_idx = rope.byte_to_char(line.end);
             trailing_spaces = x + self.hscroll;
-        } else if line_len > x + self.hscroll {
+        } else if len_chars >= x + self.hscroll {
             char_idx += x + self.hscroll;
             trailing_spaces = 0;
         } else {
+            let line_len = len_chars.saturating_sub(1);
             char_idx += line_len;
             trailing_spaces = x + self.hscroll - line_len;
         }
@@ -122,11 +123,8 @@ impl View {
     }
 
     #[inline(always)]
-    pub fn len_chars(&self, vlines: &VLines, rope: &Rope) -> u16 {
-        vlines[self.cursor]
-            .slice(rope)
-            .len_chars()
-            .saturating_sub(1) as _
+    pub fn line_len(&self, vlines: &VLines, rope: &Rope) -> u16 {
+        self.slice(vlines, rope).len_chars().saturating_sub(1) as _
     }
 
     pub fn slice<'r>(&self, vlines: &VLines, rope: &'r Rope) -> RopeSlice<'r> {

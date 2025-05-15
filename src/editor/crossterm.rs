@@ -107,6 +107,7 @@ impl Editor {
             }) => {
                 self.move_cursor_at_end();
             }
+            Event::Mouse(_) => {}
             _ => {
                 dbg!(event);
             }
