@@ -1,44 +1,114 @@
 use super::*;
-use ::crossterm::event::{Event, KeyCode};
+use ::crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
 impl Editor {
     pub fn handle_event(&mut self, event: Event) {
-        if let Event::Key(key) = event {
-            match key.code {
-                KeyCode::Char('0') => {
-                    self.move_cursor_at_0();
-                }
-                KeyCode::Char(c) => {
-                    self.insert_char(c);
-                }
-                KeyCode::Enter => self.insert_char('\n'),
-                KeyCode::Backspace => {
-                    self.delete_char_backward();
-                }
-                KeyCode::Delete => {
-                    self.delete_char_forward();
-                }
-                KeyCode::Up => {
-                    self.move_cursor_up();
-                }
-                KeyCode::Down => {
-                    self.move_cursor_down();
-                }
-                KeyCode::Left => {
-                    self.move_cursor_left();
-                }
-                KeyCode::Right => {
-                    self.move_cursor_right();
-                }
-                KeyCode::Home => {
-                    self.move_cursor_at_start();
-                }
-                KeyCode::End => {
-                    self.move_cursor_at_end();
-                }
-                _ => {
-                    dbg!(event);
-                }
+        match event {
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('0'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.move_cursor_at_0();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Char(c),
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.insert_char(c);
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => self.insert_char('\n'),
+            Event::Key(KeyEvent {
+                code: KeyCode::Backspace,
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.delete_char_backward();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Delete,
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.delete_char_forward();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Up,
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.move_cursor_up();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Down,
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.move_cursor_down();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Left,
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.move_cursor_left();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Right,
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.move_cursor_right();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Up,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            }) => {
+                self.scroll_up();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Down,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            }) => {
+                self.scroll_down();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Left,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            }) => {
+                self.scroll_left();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Right,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            }) => {
+                self.scroll_right();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Home,
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.move_cursor_at_start();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::End,
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.move_cursor_at_end();
+            }
+            _ => {
+                dbg!(event);
             }
         }
     }

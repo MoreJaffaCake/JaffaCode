@@ -31,45 +31,71 @@ impl View {
     }
 
     #[inline(always)]
-    pub fn scroll_up(&mut self, vlines: &VLines) {
-        self.start = vlines[self.start].prev;
-        debug_assert!(vlines.contains_key(self.start));
-        self.start_idx -= 1;
+    pub fn scroll_up(&mut self, vlines: &VLines) -> bool {
+        let prev = vlines[self.start].prev;
+        if vlines.contains_key(prev) {
+            self.start = prev;
+            self.start_idx -= 1;
+            true
+        } else {
+            false
+        }
     }
 
     #[inline(always)]
-    pub fn scroll_down(&mut self, vlines: &VLines) {
+    pub fn scroll_down(&mut self, vlines: &VLines) -> bool {
         let next = vlines[self.start].next;
         if vlines.contains_key(next) {
             self.start = next;
             self.start_idx += 1;
+            true
+        } else {
+            false
         }
     }
 
     #[inline(always)]
-    pub fn move_cursor_prev(&mut self, vlines: &VLines) {
-        self.cursor = vlines[self.cursor].prev;
-        debug_assert!(vlines.contains_key(self.cursor));
-        self.cursor_idx -= 1;
+    pub fn move_cursor_prev(&mut self, vlines: &VLines) -> bool {
+        let prev = vlines[self.cursor].prev;
+        if vlines.contains_key(prev) {
+            self.cursor = prev;
+            self.cursor_idx -= 1;
+            true
+        } else {
+            false
+        }
     }
 
     #[inline(always)]
-    pub fn move_cursor_next(&mut self, vlines: &VLines) {
+    pub fn move_cursor_next(&mut self, vlines: &VLines) -> bool {
         let next = vlines[self.cursor].next;
         if vlines.contains_key(next) {
             self.cursor = next;
             self.cursor_idx += 1;
+            true
+        } else {
+            false
         }
     }
 
     #[inline(always)]
-    pub fn scroll_left(&mut self, i: usize) {
-        self.hscroll = self.hscroll.saturating_sub(i);
+    pub fn scroll_left(&mut self, i: usize) -> bool {
+        if let Some(hscroll) = self.hscroll.checked_sub(i) {
+            self.hscroll = hscroll;
+            true
+        } else {
+            false
+        }
     }
 
     #[inline(always)]
-    pub fn scroll_right(&mut self, i: usize) {
-        self.hscroll += i;
+    pub fn scroll_right(&mut self, vlines: &VLines, i: usize) -> bool {
+        if self.hscroll + i < vlines.wrap_at() {
+            self.hscroll += i;
+            true
+        } else {
+            false
+        }
     }
 
     pub fn get_position(&mut self, x: usize, y: usize, vlines: &VLines, rope: &Rope) -> Position {

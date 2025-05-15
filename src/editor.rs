@@ -173,8 +173,13 @@ impl Editor {
             if self.view.cursor_idx > self.cur_y as usize + self.view.start_idx {
                 self.view.move_cursor_prev(&self.vlines);
             }
-            self.clear_position();
+        } else {
+            // TODO scrolling even before the file so we can add text there?
+            if self.view.scroll_up(&self.vlines) {
+                self.view.move_cursor_prev(&self.vlines);
+            }
         }
+        self.clear_position();
     }
 
     pub fn move_cursor_down(&mut self) {
@@ -248,5 +253,35 @@ impl Editor {
 
     pub fn cursor_position<T: From<u16>>(&self) -> (T, T) {
         (T::from(self.cur_x), T::from(self.cur_y))
+    }
+
+    pub fn scroll_up(&mut self) {
+        if self.view.scroll_up(&self.vlines) {
+            self.cur_y += 1;
+        }
+    }
+
+    pub fn scroll_down(&mut self) {
+        if self.view.scroll_down(&self.vlines) {
+            if self.cur_y > 0 {
+                self.cur_y -= 1;
+            } else {
+                self.view.move_cursor_next(&self.vlines);
+            }
+        }
+    }
+
+    pub fn scroll_left(&mut self) {
+        if self.view.scroll_left(1) {
+            self.cur_x += 1;
+        }
+    }
+
+    pub fn scroll_right(&mut self) {
+        if self.view.scroll_right(&self.vlines, 1) {
+            if self.cur_x > 0 {
+                self.cur_x -= 1;
+            }
+        }
     }
 }
