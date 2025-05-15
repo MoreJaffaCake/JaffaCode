@@ -74,19 +74,19 @@ impl View {
 
     pub fn get_position(&mut self, x: usize, y: usize, vlines: &VLines, rope: &Rope) -> Position {
         let line = &vlines[self.cursor];
-        let mut char_idx = rope.byte_to_char(line.start_byte) + self.hscroll;
+        let mut char_idx = rope.byte_to_char(line.start_byte);
         let newlines = (self.start_idx + y).saturating_sub(self.cursor_idx);
         let trailing_spaces;
         let line_len = line.slice(rope).len_chars().saturating_sub(1);
         if newlines > 0 {
             char_idx = rope.byte_to_char(line.end);
             trailing_spaces = x + self.hscroll;
-        } else if line_len >= x {
-            char_idx += x;
+        } else if line_len > x + self.hscroll {
+            char_idx += x + self.hscroll;
             trailing_spaces = 0;
         } else {
             char_idx += line_len;
-            trailing_spaces = x - line_len + self.hscroll;
+            trailing_spaces = x + self.hscroll - line_len;
         }
         Position {
             trailing_spaces,
