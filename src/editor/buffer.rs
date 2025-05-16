@@ -1,141 +1,127 @@
-use super::view::*;
-use super::vlines::*;
-use ropey::*;
+use super::*;
+
+const HARD_LIMIT: usize = 200;
+static HSPACES: &str = "                                                                                                                                                                                                        ";
+static VSPACES: &str = "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n";
 
 #[derive(derive_more::Debug)]
 pub struct Buffer {
-    wrap_at: usize,
-    view: View,
-    position: Option<Position>,
-    cur_y: u16,
-    cur_x: u16,
     #[debug(skip)]
-    hspaces: String,
-    #[debug(skip)]
-    vspaces: String,
+    pub rope_key: RopeKey,
+    pub wrap_at: usize,
 }
 
 impl Buffer {
-    pub fn new(vlines: &VLines, wrap_at: usize) -> Self {
-        let mut view = View::new(vlines.first());
-        view.scroll_down(&vlines);
-        view.move_cursor_next(&vlines);
-        view.scroll_down(&vlines);
-        view.move_cursor_next(&vlines);
-        Self {
-            wrap_at,
-            view,
-            position: None,
-            cur_y: 0,
-            cur_x: 0,
-            hspaces: std::iter::repeat(' ').take(200).collect::<String>(),
-            vspaces: std::iter::repeat('\n').take(200).collect::<String>(),
-        }
+    pub fn new(rope_key: RopeKey, wrap_at: usize) -> Self {
+        debug_assert!(wrap_at < HARD_LIMIT);
+        Self { rope_key, wrap_at }
     }
 
-    fn position(&mut self, vlines: &VLines, rope: &Rope) -> &mut Position {
-        if self.position.is_none() {
-            self.position =
-                Some(
-                    self.view
-                        .get_position(self.cur_x as _, self.cur_y as _, vlines, rope),
-                );
-            dbg!(self.position.as_ref().unwrap());
-        }
-        self.position.as_mut().unwrap()
-    }
-
-    #[inline(always)]
-    fn clear_position(&mut self) {
-        self.position.take();
-    }
-
-    pub fn insert_char(&mut self, vlines: &mut VLines, rope: &mut Rope, c: char) {
+    pub fn insert_char(
+        &mut self,
+        vlines: &mut VLines,
+        ropes: &mut RopeMap,
+        view: &mut View,
+        c: char,
+    ) {
+        let rope = &mut ropes[self.rope_key];
         let Position {
             trailing_spaces,
             mut char_idx,
             newlines,
-        } = *self.position(vlines, rope);
+        } = *view.position(vlines, rope);
         if newlines > 0 {
-            rope.insert(char_idx, &self.vspaces[..newlines]);
-            vlines.insert_newlines(&mut self.view, newlines);
+            rope.insert(char_idx, &VSPACES[..newlines]);
+            vlines.insert_newlines(view, newlines);
             char_idx += newlines.saturating_sub(1);
         }
         if trailing_spaces > 0 {
-            rope.insert(char_idx, &self.hspaces[..trailing_spaces]);
+            rope.insert(char_idx, &HSPACES[..trailing_spaces]);
             char_idx += trailing_spaces;
         }
         rope.insert_char(char_idx, c);
-        vlines.insert(&self.view, trailing_spaces + 1, rope, self.wrap_at);
-        self.position(vlines, rope).char_idx += 1;
-        if c == '\n' || self.cur_x as usize + 1 >= self.wrap_at {
-            self.view.move_cursor_next(vlines);
-            self.cur_y += 1;
-            self.cur_x = 0;
+        vlines.insert(view, trailing_spaces + 1, rope, self.wrap_at);
+        view.position(vlines, rope).char_idx += 1;
+        if c == '\n' || view.cur_x as usize + 1 >= self.wrap_at {
+            view.move_cursor_next(vlines);
+            view.cur_y += 1;
+            view.cur_x = 0;
         } else {
-            self.cur_x += 1;
+            view.cur_x += 1;
         }
-        let pos = self.position(vlines, rope);
+        let pos = view.position(vlines, rope);
         pos.char_idx = char_idx + 1;
         pos.trailing_spaces = 0;
         pos.newlines = 0;
     }
 
-    pub fn delete_char_forward(&mut self, vlines: &mut VLines, rope: &mut Rope) {
+    pub fn delete_char_forward(
+        &mut self,
+        vlines: &mut VLines,
+        ropes: &mut RopeMap,
+        view: &mut View,
+    ) {
+        let rope = &mut ropes[self.rope_key];
         let Position {
             trailing_spaces,
             mut char_idx,
             ..
-        } = *self.position(vlines, rope);
+        } = *view.position(vlines, rope);
         if char_idx >= rope.len_chars() {
             return;
         }
         if trailing_spaces > 0 {
-            rope.insert(char_idx, &self.hspaces[..trailing_spaces]);
-            vlines.insert(&self.view, trailing_spaces, rope, self.wrap_at);
+            rope.insert(char_idx, &HSPACES[..trailing_spaces]);
+            vlines.insert(view, trailing_spaces, rope, self.wrap_at);
             char_idx += trailing_spaces;
         }
         rope.remove(char_idx..=char_idx);
-        vlines.remove(&mut self.view, 1, rope, self.wrap_at);
-        let pos = self.position(vlines, rope);
+        vlines.remove(view, 1, rope, self.wrap_at);
+        let pos = view.position(vlines, rope);
         pos.char_idx = char_idx;
         pos.trailing_spaces = 0;
     }
 
-    pub fn delete_char_backward(&mut self, vlines: &mut VLines, rope: &mut Rope) {
+    pub fn delete_char_backward(
+        &mut self,
+        vlines: &mut VLines,
+        ropes: &mut RopeMap,
+        view: &mut View,
+    ) {
+        let rope = &mut ropes[self.rope_key];
         let Position {
             mut char_idx,
             trailing_spaces,
             newlines,
-        } = *self.position(vlines, rope);
+        } = *view.position(vlines, rope);
         if char_idx == 0 {
             return;
-        } else if self.cur_x > 0 {
-            self.cur_x -= 1;
-        } else if self.cur_y > 0 {
-            self.cur_y -= 1;
+        } else if view.cur_x > 0 {
+            view.cur_x -= 1;
+        } else if view.cur_y > 0 {
+            view.cur_y -= 1;
             if newlines == 0 {
                 char_idx -= 1;
-                self.view.move_cursor_prev(vlines);
-                self.cur_x = self.view.line_len(vlines, rope);
+                view.move_cursor_prev(vlines);
+                view.cur_x = view.line_len(vlines, rope);
                 rope.remove(char_idx..=char_idx);
-                vlines.remove(&mut self.view, 1, rope, self.wrap_at);
-                self.position(vlines, rope).char_idx = char_idx;
+                vlines.remove(view, 1, rope, self.wrap_at);
+                view.position(vlines, rope).char_idx = char_idx;
             } else {
-                self.position(vlines, rope).newlines -= 1;
+                view.position(vlines, rope).newlines -= 1;
                 if newlines == 1 {
-                    self.cur_x = self.view.line_len(vlines, rope);
+                    view.cur_x = view.line_len(vlines, rope);
                 }
             }
             return;
         } else {
-            self.view.scroll_up(vlines);
-            self.view.move_cursor_prev(vlines);
-            let line_len = vlines[self.view.cursor]
+            view.scroll_up(vlines);
+            view.move_cursor_prev(vlines);
+            let line_len = vlines[view.cursor]
                 .slice(rope)
                 .len_chars()
                 .saturating_sub(1);
-            self.cur_x = line_len as _;
+            view.cur_x = line_len as _;
         }
         if trailing_spaces == 0 {
             if char_idx == rope.len_chars() {
@@ -143,118 +129,10 @@ impl Buffer {
             }
             char_idx -= 1;
             rope.remove(char_idx..=char_idx);
-            vlines.remove(&mut self.view, 1, rope, self.wrap_at);
-            self.position(vlines, rope).char_idx = char_idx;
+            vlines.remove(view, 1, rope, self.wrap_at);
+            view.position(vlines, rope).char_idx = char_idx;
         } else {
-            self.position(vlines, rope).trailing_spaces -= 1;
-        }
-    }
-
-    pub fn move_cursor_up(&mut self, vlines: &VLines) {
-        if self.cur_y > 0 {
-            self.cur_y -= 1;
-            if self.view.cursor_idx > self.cur_y as usize + self.view.start_idx {
-                self.view.move_cursor_prev(vlines);
-            }
-        } else {
-            // TODO scrolling even before the file so we can add text there?
-            if self.view.scroll_up(vlines) {
-                self.view.move_cursor_prev(vlines);
-            }
-        }
-        self.clear_position();
-    }
-
-    pub fn move_cursor_down(&mut self, vlines: &VLines) {
-        self.cur_y += 1;
-        self.view.move_cursor_next(vlines);
-        self.clear_position();
-    }
-
-    pub fn move_cursor_left(&mut self, vlines: &VLines, rope: &Rope) {
-        if self.cur_x > 0 {
-            self.cur_x -= 1;
-        } else {
-            if self.cur_y > 0 {
-                self.cur_y -= 1;
-            } else if self.view.start_idx > 0 {
-                self.view.scroll_up(vlines);
-            } else {
-                return;
-            }
-            self.view.move_cursor_prev(vlines);
-            self.cur_x = self.view.line_len(vlines, rope);
-        }
-        self.clear_position();
-    }
-
-    pub fn move_cursor_right(&mut self, vlines: &VLines) {
-        if self.cur_x as usize + 1 < self.wrap_at {
-            self.cur_x += 1;
-        } else {
-            self.cur_x = 0;
-            self.cur_y += 1;
-            self.view.move_cursor_next(vlines);
-        }
-        self.clear_position();
-    }
-
-    pub fn move_cursor_at_0(&mut self) {
-        self.cur_x = 0;
-        self.clear_position();
-    }
-
-    pub fn move_cursor_at_start(&mut self, vlines: &VLines, rope: &Rope) {
-        let new_cur_x = self
-            .view
-            .slice(vlines, rope)
-            .chars()
-            .enumerate()
-            .find_map(|(i, c)| (!c.is_whitespace()).then_some(i as u16))
-            .unwrap_or(0);
-        self.cur_x = new_cur_x;
-        self.clear_position();
-    }
-
-    pub fn move_cursor_at_end(&mut self, vlines: &VLines, rope: &Rope) {
-        let slice = self.view.slice(vlines, rope);
-        let len_chars = slice.len_chars();
-        self.cur_x = slice
-            .chars_at(len_chars)
-            .reversed()
-            .enumerate()
-            .find_map(|(i, c)| (!c.is_whitespace()).then_some((len_chars - i) as u16))
-            .unwrap_or(0);
-        self.clear_position();
-    }
-
-    pub fn get_display_lines<'v: 'r, 'r>(
-        &self,
-        vlines: &'v VLines,
-        rope: &'r Rope,
-    ) -> impl Iterator<Item = RopeSlice<'r>> {
-        vlines.slices(&self.view, rope)
-    }
-
-    pub fn cursor_position<T: From<u16>>(&self) -> (T, T) {
-        (T::from(self.cur_x), T::from(self.cur_y))
-    }
-
-    pub fn scroll_up(&mut self, vlines: &VLines) {
-        if self.view.scroll_up(vlines) {
-            self.cur_y += 1;
-            self.clear_position();
-        }
-    }
-
-    pub fn scroll_down(&mut self, vlines: &VLines) {
-        if self.view.scroll_down(vlines) {
-            if self.cur_y > 0 {
-                self.cur_y -= 1;
-            } else {
-                self.view.move_cursor_next(vlines);
-            }
-            self.clear_position();
+            view.position(vlines, rope).trailing_spaces -= 1;
         }
     }
 }
