@@ -80,20 +80,6 @@ impl Editor {
                 self.scroll_down();
             }
             Event::Key(KeyEvent {
-                code: KeyCode::Left,
-                modifiers: KeyModifiers::SHIFT,
-                ..
-            }) => {
-                self.scroll_left();
-            }
-            Event::Key(KeyEvent {
-                code: KeyCode::Right,
-                modifiers: KeyModifiers::SHIFT,
-                ..
-            }) => {
-                self.scroll_right();
-            }
-            Event::Key(KeyEvent {
                 code: KeyCode::Home,
                 modifiers: KeyModifiers::NONE,
                 ..

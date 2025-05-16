@@ -9,7 +9,6 @@ pub struct View {
     #[debug(skip)]
     pub cursor: Key,
     pub cursor_idx: usize,
-    pub hscroll: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -26,7 +25,6 @@ impl View {
             start_idx: 0,
             cursor: start,
             cursor_idx: 0,
-            hscroll: 10,
         }
     }
 
@@ -78,26 +76,6 @@ impl View {
         }
     }
 
-    #[inline(always)]
-    pub fn scroll_left(&mut self, i: usize) -> bool {
-        if let Some(hscroll) = self.hscroll.checked_sub(i) {
-            self.hscroll = hscroll;
-            true
-        } else {
-            false
-        }
-    }
-
-    #[inline(always)]
-    pub fn scroll_right(&mut self, vlines: &VLines, i: usize) -> bool {
-        if self.hscroll + i < vlines.wrap_at() {
-            self.hscroll += i;
-            true
-        } else {
-            false
-        }
-    }
-
     pub fn get_position(&mut self, x: usize, y: usize, vlines: &VLines, rope: &Rope) -> Position {
         let line = &vlines[self.cursor];
         let mut char_idx = rope.byte_to_char(line.start_byte);
@@ -106,14 +84,14 @@ impl View {
         let len_chars = line.slice(rope).len_chars();
         if newlines > 0 {
             char_idx = rope.byte_to_char(line.end);
-            trailing_spaces = x + self.hscroll;
-        } else if len_chars >= x + self.hscroll {
-            char_idx += x + self.hscroll;
+            trailing_spaces = x;
+        } else if len_chars >= x {
+            char_idx += x;
             trailing_spaces = 0;
         } else {
             let line_len = len_chars.saturating_sub(1);
             char_idx += line_len;
-            trailing_spaces = x + self.hscroll - line_len;
+            trailing_spaces = x - line_len;
         }
         Position {
             trailing_spaces,
@@ -128,15 +106,6 @@ impl View {
     }
 
     pub fn slice<'r>(&self, vlines: &VLines, rope: &'r Rope) -> RopeSlice<'r> {
-        let slice = vlines[self.cursor].slice(rope);
-        if self.hscroll > 0 {
-            if slice.len_chars() <= self.hscroll {
-                slice.slice(..0)
-            } else {
-                slice.slice(self.hscroll..)
-            }
-        } else {
-            slice
-        }
+        vlines[self.cursor].slice(rope)
     }
 }

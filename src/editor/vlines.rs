@@ -103,12 +103,11 @@ impl VLines {
     }
 
     #[inline(always)]
-    pub fn slices<'v, 'r>(&self, view: &'v View, rope: &'r Rope) -> SliceIterator<'_, 'v, 'r> {
+    pub fn slices<'r>(&self, view: &View, rope: &'r Rope) -> SliceIterator<'_, 'r> {
         SliceIterator {
             arena: &self.arena,
             rope,
             index: view.start,
-            view,
         }
     }
 
@@ -232,28 +231,18 @@ impl Line {
     }
 }
 
-pub struct SliceIterator<'a, 'v, 'r> {
+pub struct SliceIterator<'a, 'r> {
     arena: &'a SlotMap<Key, Line>,
     rope: &'r Rope,
     index: Key,
-    view: &'v View,
 }
 
-impl<'a, 'v, 'r: 'a> Iterator for SliceIterator<'a, 'v, 'r> {
+impl<'a, 'r: 'a> Iterator for SliceIterator<'a, 'r> {
     type Item = RopeSlice<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let line = self.arena.get(self.index)?;
         self.index = line.next;
-        let slice = line.slice(&self.rope);
-        Some(if self.view.hscroll > 0 {
-            if slice.len_chars() <= self.view.hscroll {
-                slice.slice(..0)
-            } else {
-                slice.slice(self.view.hscroll..)
-            }
-        } else {
-            slice
-        })
+        Some(line.slice(&self.rope))
     }
 }

@@ -127,8 +127,6 @@ impl Editor {
             return;
         } else if self.cur_x > 0 {
             self.cur_x -= 1;
-        } else if self.view.hscroll > 0 {
-            self.view.scroll_left(1);
         } else if self.cur_y > 0 {
             self.cur_y -= 1;
             if newlines == 0 {
@@ -206,7 +204,7 @@ impl Editor {
     }
 
     pub fn move_cursor_right(&mut self) {
-        if self.cur_x as usize + 1 < self.vlines.wrap_at() - self.view.hscroll {
+        if self.cur_x as usize + 1 < self.vlines.wrap_at() {
             self.cur_x += 1;
         } else {
             self.cur_x = 0;
@@ -266,22 +264,6 @@ impl Editor {
                 self.cur_y -= 1;
             } else {
                 self.view.move_cursor_next(&self.vlines);
-            }
-            self.clear_position();
-        }
-    }
-
-    pub fn scroll_left(&mut self) {
-        if self.view.scroll_left(1) {
-            self.cur_x += 1;
-            self.clear_position();
-        }
-    }
-
-    pub fn scroll_right(&mut self) {
-        if self.view.scroll_right(&self.vlines, 1) {
-            if self.cur_x > 0 {
-                self.cur_x -= 1;
             }
             self.clear_position();
         }
