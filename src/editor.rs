@@ -12,14 +12,11 @@ use ropey::*;
 use slotmap::*;
 
 new_key_type! {
-    pub struct RopeKey;
-}
-pub type RopeMap = SlotMap<RopeKey, Rope>;
-
-new_key_type! {
     pub struct BufferKey;
 }
-pub type BufferMap = SlotMap<BufferKey, Buffer>;
+pub type RopeMap = SlotMap<BufferKey, Rope>;
+
+pub type BufferMap = SecondaryMap<BufferKey, Buffer>;
 
 #[derive(derive_more::Debug)]
 pub struct Editor {
@@ -42,23 +39,20 @@ impl Editor {
         }
 
         let mut ropes = RopeMap::with_key();
-        let rope_key = ropes.insert(rope);
+        let buffer_key = ropes.insert(rope);
 
-        // TODO put active_buffer instead of rope_key?
-        let vlines = VLines::new(&ropes[rope_key], rope_key, 40);
+        let vlines = VLines::new(&ropes, buffer_key, 40);
 
-        let mut buffers = BufferMap::with_key();
-        let active_buffer = buffers.insert(Buffer::new(rope_key, 40));
+        let mut buffers = BufferMap::new();
+        buffers.insert(buffer_key, Buffer::new(buffer_key, 40));
 
-        let mut view = View::new(active_buffer, rope_key, vlines.first());
-        view.scroll_down(&vlines);
-        view.scroll_down(&vlines);
+        let view = View::new(buffer_key, vlines.first());
 
         Self {
             ropes,
             vlines,
             buffers,
-            active_buffer,
+            active_buffer: buffer_key,
             view,
         }
     }
@@ -120,5 +114,16 @@ impl Editor {
 
     pub fn scroll_down(&mut self) {
         self.view.scroll_down(&self.vlines);
+    }
+
+    pub fn split_buffer(&mut self) {
+        let line = &self.vlines[self.view.cursor];
+        let rope = &mut self.ropes[line.buffer_key];
+        let char_idx = rope.byte_to_char(line.start_byte);
+        let new_rope = rope.split_off(char_idx);
+        let new_buffer_key = self.ropes.insert(new_rope);
+        let new_buffer = Buffer::new(new_buffer_key, 40);
+        self.buffers.insert(new_buffer_key, new_buffer);
+        self.vlines.update_rope(self.view.cursor, new_buffer_key);
     }
 }

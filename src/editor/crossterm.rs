@@ -93,6 +93,13 @@ impl Editor {
             }) => {
                 self.move_cursor_at_end();
             }
+            Event::Key(KeyEvent {
+                code: KeyCode::F(8),
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.split_buffer();
+            }
             Event::Mouse(_) => {}
             _ => {
                 dbg!(event);

@@ -3,10 +3,6 @@ use super::*;
 #[derive(derive_more::Debug)]
 pub struct View {
     #[debug(skip)]
-    pub buffer_key: BufferKey,
-    #[debug(skip)]
-    pub rope_key: RopeKey,
-    #[debug(skip)]
     pub start: VLineKey,
     pub start_idx: usize,
     #[debug(skip)]
@@ -25,10 +21,8 @@ pub struct Position {
 }
 
 impl View {
-    pub fn new(buffer_key: BufferKey, rope_key: RopeKey, start: VLineKey) -> Self {
+    pub fn new(buffer_key: BufferKey, start: VLineKey) -> Self {
         Self {
-            buffer_key,
-            rope_key,
             start,
             start_idx: 0,
             cursor: start,
@@ -37,6 +31,10 @@ impl View {
             cur_y: 0,
             cur_x: 0,
         }
+    }
+
+    pub fn cursor_rope_mut<'r>(&self, vlines: &VLines, ropes: &'r mut RopeMap) -> &'r mut Rope {
+        &mut ropes[vlines[self.cursor].buffer_key]
     }
 
     pub fn get_display_lines<'v: 'r, 'r>(
@@ -97,15 +95,16 @@ impl View {
         }
     }
 
-    pub fn position(&mut self, vlines: &VLines, rope: &Rope) -> &mut Position {
+    pub fn position(&mut self, vlines: &VLines, ropes: &RopeMap) -> &mut Position {
         if self.position.is_none() {
             let line = &vlines[self.cursor];
+            let rope = &ropes[line.buffer_key];
             let mut char_idx = rope.byte_to_char(line.start_byte);
             let newlines = (self.start_idx + self.cur_y as usize).saturating_sub(self.cursor_idx);
             let trailing_spaces: usize;
-            let len_chars = line.slice(rope).len_chars();
+            let len_chars = line.slice(ropes).len_chars();
             if newlines > 0 {
-                char_idx = rope.byte_to_char(line.end);
+                char_idx = rope.byte_to_char(line.end_byte);
                 trailing_spaces = self.cur_x as usize;
             } else if len_chars >= self.cur_x as usize {
                 char_idx += self.cur_x as usize;
@@ -121,6 +120,7 @@ impl View {
                 newlines,
             });
         }
+        dbg!(self.position.as_ref().unwrap());
         self.position.as_mut().unwrap()
     }
 
@@ -130,17 +130,15 @@ impl View {
     }
 
     #[inline(always)]
-    pub fn line_len(&self, vlines: &VLines, rope: &Rope) -> u16 {
+    pub fn line_len(&self, vlines: &VLines, ropes: &RopeMap) -> u16 {
         vlines[self.cursor]
-            .slice(rope)
+            .slice(ropes)
             .len_chars()
             .saturating_sub(1) as _
     }
 
     pub fn slice<'r>(&self, vlines: &VLines, ropes: &'r RopeMap) -> RopeSlice<'r> {
-        let line = &vlines[self.cursor];
-        let rope = &ropes[line.rope_key];
-        vlines[self.cursor].slice(rope)
+        vlines[self.cursor].slice(ropes)
     }
 
     pub fn cursor_position<T: From<u16>>(&self) -> (T, T) {
@@ -172,19 +170,19 @@ impl View {
         } else {
             if self.cur_y > 0 {
                 self.cur_y -= 1;
+                self.move_cursor_prev(vlines);
             } else if self.start_idx > 0 {
                 self.scroll_up(vlines);
             } else {
                 return;
             }
-            self.move_cursor_prev(vlines);
-            self.cur_x = self.line_len(vlines, &ropes[self.rope_key]);
+            self.cur_x = self.line_len(vlines, ropes);
         }
         self.clear_position();
     }
 
     pub fn move_cursor_right(&mut self, vlines: &VLines, buffers: &BufferMap) {
-        let buffer = &buffers[self.buffer_key];
+        let buffer = &buffers[vlines[self.cursor].buffer_key];
         if self.cur_x as usize + 1 < buffer.wrap_at {
             self.cur_x += 1;
         } else {
