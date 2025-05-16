@@ -4,6 +4,7 @@ use ropey::*;
 
 #[derive(derive_more::Debug)]
 pub struct Buffer {
+    wrap_at: usize,
     view: View,
     position: Option<Position>,
     cur_y: u16,
@@ -15,13 +16,14 @@ pub struct Buffer {
 }
 
 impl Buffer {
-    pub fn new(vlines: &VLines) -> Self {
+    pub fn new(vlines: &VLines, wrap_at: usize) -> Self {
         let mut view = View::new(vlines.first());
         view.scroll_down(&vlines);
         view.move_cursor_next(&vlines);
         view.scroll_down(&vlines);
         view.move_cursor_next(&vlines);
         Self {
+            wrap_at,
             view,
             position: None,
             cur_y: 0,
@@ -64,9 +66,9 @@ impl Buffer {
             char_idx += trailing_spaces;
         }
         rope.insert_char(char_idx, c);
-        vlines.insert(&self.view, trailing_spaces + 1, rope);
+        vlines.insert(&self.view, trailing_spaces + 1, rope, self.wrap_at);
         self.position(vlines, rope).char_idx += 1;
-        if c == '\n' || self.cur_x as usize + 1 >= vlines.wrap_at() {
+        if c == '\n' || self.cur_x as usize + 1 >= self.wrap_at {
             self.view.move_cursor_next(vlines);
             self.cur_y += 1;
             self.cur_x = 0;
@@ -90,11 +92,11 @@ impl Buffer {
         }
         if trailing_spaces > 0 {
             rope.insert(char_idx, &self.hspaces[..trailing_spaces]);
-            vlines.insert(&self.view, trailing_spaces, rope);
+            vlines.insert(&self.view, trailing_spaces, rope, self.wrap_at);
             char_idx += trailing_spaces;
         }
         rope.remove(char_idx..=char_idx);
-        vlines.remove(&mut self.view, 1, rope);
+        vlines.remove(&mut self.view, 1, rope, self.wrap_at);
         let pos = self.position(vlines, rope);
         pos.char_idx = char_idx;
         pos.trailing_spaces = 0;
@@ -117,7 +119,7 @@ impl Buffer {
                 self.view.move_cursor_prev(vlines);
                 self.cur_x = self.view.line_len(vlines, rope);
                 rope.remove(char_idx..=char_idx);
-                vlines.remove(&mut self.view, 1, rope);
+                vlines.remove(&mut self.view, 1, rope, self.wrap_at);
                 self.position(vlines, rope).char_idx = char_idx;
             } else {
                 self.position(vlines, rope).newlines -= 1;
@@ -141,7 +143,7 @@ impl Buffer {
             }
             char_idx -= 1;
             rope.remove(char_idx..=char_idx);
-            vlines.remove(&mut self.view, 1, rope);
+            vlines.remove(&mut self.view, 1, rope, self.wrap_at);
             self.position(vlines, rope).char_idx = char_idx;
         } else {
             self.position(vlines, rope).trailing_spaces -= 1;
@@ -187,7 +189,7 @@ impl Buffer {
     }
 
     pub fn move_cursor_right(&mut self, vlines: &VLines) {
-        if self.cur_x as usize + 1 < vlines.wrap_at() {
+        if self.cur_x as usize + 1 < self.wrap_at {
             self.cur_x += 1;
         } else {
             self.cur_x = 0;

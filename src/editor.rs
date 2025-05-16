@@ -22,8 +22,8 @@ impl Editor {
         if rope.char(len_chars - 1) != '\n' {
             rope.insert_char(len_chars, '\n');
         }
-        let vlines = VLines::new(40, &rope);
-        let buffer = Buffer::new(&vlines);
+        let vlines = VLines::new(&rope, 40);
+        let buffer = Buffer::new(&vlines, 40);
         Self {
             rope,
             vlines,

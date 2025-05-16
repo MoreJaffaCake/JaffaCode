@@ -14,11 +14,10 @@ pub struct VLines {
     empty: Key,
     #[debug(skip)]
     first: Key,
-    wrap_at: usize,
 }
 
 impl VLines {
-    pub fn new(wrap_at: usize, rope: &Rope) -> Self {
+    pub fn new(rope: &Rope, wrap_at: usize) -> Self {
         let mut arena = SlotMap::<Key, Line>::with_key();
         let empty = arena.insert_with_key(|k| Line {
             prev: k,
@@ -32,7 +31,6 @@ impl VLines {
             arena,
             empty,
             first: empty,
-            wrap_at,
         };
         let mut it = rope.lines();
 
@@ -45,7 +43,7 @@ impl VLines {
                 start_byte: 0,
                 end,
             });
-            let key = instance.wrap(key, rope);
+            let key = instance.wrap(rope, key, wrap_at);
             (key, end)
         };
 
@@ -64,7 +62,7 @@ impl VLines {
                 end,
             });
             instance.arena[prev].next = key;
-            let key = instance.wrap(key, rope);
+            let key = instance.wrap(rope, key, wrap_at);
             prev_end = end;
             prev = key;
         }
@@ -72,16 +70,12 @@ impl VLines {
         instance
     }
 
-    pub fn wrap_at(&self) -> usize {
-        self.wrap_at
-    }
-
-    fn wrap(&mut self, mut key: Key, rope: &Rope) -> Key {
+    fn wrap(&mut self, rope: &Rope, mut key: Key, wrap_at: usize) -> Key {
         loop {
             let line = &self.arena[key];
             let slice = line.slice(rope);
             let len_chars = slice.len_chars();
-            if len_chars <= self.wrap_at + 1 {
+            if len_chars <= wrap_at + 1 {
                 let newline_idx = slice
                     .chars()
                     .enumerate()
@@ -96,7 +90,7 @@ impl VLines {
                     unreachable!("missing newline at EOF");
                 }
             } else {
-                key = self.split_line(key, self.wrap_at);
+                key = self.split_line(key, wrap_at);
             }
         }
         key
@@ -111,7 +105,7 @@ impl VLines {
         }
     }
 
-    pub fn insert(&mut self, view: &View, bytes: usize, rope: &Rope) {
+    pub fn insert(&mut self, view: &View, bytes: usize, rope: &Rope, wrap_at: usize) {
         let mut key = view.cursor;
         {
             let line = &mut self.arena[key];
@@ -123,10 +117,10 @@ impl VLines {
             line.end += bytes;
             key = line.next;
         }
-        self.wrap(view.cursor, rope);
+        self.wrap(rope, view.cursor, wrap_at);
     }
 
-    pub fn remove(&mut self, view: &View, bytes: usize, rope: &Rope) {
+    pub fn remove(&mut self, view: &View, bytes: usize, rope: &Rope, wrap_at: usize) {
         let mut key = view.cursor;
         {
             let line = &mut self.arena[key];
@@ -138,7 +132,7 @@ impl VLines {
             line.end -= bytes;
             key = line.next;
         }
-        self.wrap(view.cursor, rope);
+        self.wrap(rope, view.cursor, wrap_at);
     }
 
     pub fn insert_newlines(&mut self, view: &mut View, n: usize) {
