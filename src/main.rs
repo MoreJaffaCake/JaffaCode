@@ -43,11 +43,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
     let mut editors = vec![
-        Editor::new(include_str!("editor.rs")),
-        Editor::new(
-            "Pane 2:
-Another text buffer.",
-        ),
+        Editor::new(&std::fs::read_to_string(
+            option_env!("FILE").unwrap_or("src/editor.rs"),
+        )?),
+        Editor::new(include_str!("editor/window.rs")),
     ];
     let constraints = std::iter::repeat_n(Constraint::Fill(1), editors.len()).collect::<Vec<_>>();
     let mut active_editor = 0;
