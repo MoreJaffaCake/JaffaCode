@@ -52,6 +52,7 @@ Another text buffer.",
     let constraints = std::iter::repeat_n(Constraint::Fill(1), editors.len()).collect::<Vec<_>>();
     let mut active_editor = 0;
     let mut scroll: usize = 1;
+    let mut debug = false;
 
     loop {
         terminal.draw(|f| {
@@ -59,10 +60,17 @@ Another text buffer.",
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Min(43), Constraint::Fill(2)])
                 .split(f.area());
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(&constraints)
-                .split(cols[0]);
+            let chunks = if debug {
+                Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints(&constraints)
+                    .split(cols[0])
+            } else {
+                Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints(&constraints)
+                    .split(f.area())
+            };
 
             for (i, editor) in editors.iter().enumerate() {
                 let mut block = Block::default().borders(Borders::ALL);
@@ -85,17 +93,18 @@ Another text buffer.",
                 f.render_widget(p, chunks[i]);
             }
 
-            let debug = format!("{:#?}", editors);
-            let p = Paragraph::new(
-                debug
-                    .lines()
-                    .skip(scroll)
-                    .map(|x| Line::from(Span::raw(x)))
-                    .collect::<Vec<_>>(),
-            )
-            .wrap(Wrap { trim: false })
-            .block(Block::default().borders(Borders::ALL));
-            f.render_widget(p, cols[1]);
+            if debug {
+                let info = format!("{:#?}", editors);
+                let p = Paragraph::new(
+                    info.lines()
+                        .skip(scroll)
+                        .map(|x| Line::from(Span::raw(x)))
+                        .collect::<Vec<_>>(),
+                )
+                .wrap(Wrap { trim: false })
+                .block(Block::default().borders(Borders::ALL));
+                f.render_widget(p, cols[1]);
+            }
         })?;
 
         if event::poll(Duration::from_millis(100))? {
@@ -139,6 +148,13 @@ Another text buffer.",
                     ..
                 }) => {
                     scroll += 5;
+                }
+                Event::Key(KeyEvent {
+                    code: KeyCode::Char('d'),
+                    modifiers: KeyModifiers::CONTROL,
+                    ..
+                }) => {
+                    debug ^= true;
                 }
                 _ => {
                     editors[active_editor].handle_event(event);
