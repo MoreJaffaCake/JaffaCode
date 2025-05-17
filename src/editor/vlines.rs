@@ -47,11 +47,10 @@ impl VLines {
                 start_byte: 0,
                 end_byte,
             });
+            instance.first = key;
             let key = instance.wrap(ropes, key, wrap_at);
             (key, end_byte)
         };
-
-        instance.first = prev;
 
         for line in it {
             let len_bytes = line.len_bytes();
