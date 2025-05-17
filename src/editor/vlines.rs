@@ -90,14 +90,16 @@ impl VLines {
                 if newline_idx == Some(len_chars.saturating_sub(1)) {
                     break;
                 } else if let Some(newline_idx) = newline_idx {
-                    key = self.split_line(key, newline_idx + 1);
+                    let byte_idx = slice.char_to_byte(newline_idx + 1);
+                    key = self.split_line(key, byte_idx);
                 } else if self.arena.contains_key(line.next) {
                     self.merge_next(key);
                 } else {
                     unreachable!("missing newline at EOF");
                 }
             } else {
-                key = self.split_line(key, wrap_at);
+                let byte_idx = slice.char_to_byte(wrap_at);
+                key = self.split_line(key, byte_idx);
             }
         }
         key
@@ -183,9 +185,9 @@ impl VLines {
     }
 
     #[inline]
-    fn split_line(&mut self, key: VLineKey, char_idx: usize) -> VLineKey {
+    fn split_line(&mut self, key: VLineKey, byte_idx: usize) -> VLineKey {
         let line = &self.arena[key];
-        let split_byte = line.start_byte + char_idx;
+        let split_byte = line.start_byte + byte_idx;
         let next = line.next;
         let new_line = VLine {
             prev: key,
