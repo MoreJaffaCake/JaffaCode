@@ -28,6 +28,8 @@ pub struct Editor {
     #[debug(skip)]
     active_buffer: BufferKey,
     window: Window,
+    pane_width: u16,
+    pane_height: u16,
 }
 
 impl Editor {
@@ -54,6 +56,8 @@ impl Editor {
             buffers,
             active_buffer: buffer_key,
             window,
+            pane_width: 0,
+            pane_height: 0,
         }
     }
 
@@ -77,7 +81,9 @@ impl Editor {
     }
 
     pub fn move_cursor_down(&mut self) {
-        self.window.move_cursor_down(&self.vlines)
+        if self.window.cur_y < self.pane_height - 1 {
+            self.window.move_cursor_down(&self.vlines)
+        }
     }
 
     pub fn move_cursor_left(&mut self) {
@@ -101,19 +107,45 @@ impl Editor {
     }
 
     pub fn get_display_lines(&self) -> impl Iterator<Item = RopeSlice> {
-        self.window.get_display_lines(&self.vlines, &self.ropes)
+        self.window
+            .get_display_lines(&self.vlines, &self.ropes)
+            .take(self.pane_height as _)
     }
 
     pub fn cursor_position<T: From<u16>>(&self) -> (T, T) {
         self.window.cursor_position()
     }
 
-    pub fn scroll_up(&mut self) {
-        self.window.scroll_up(&self.vlines);
+    pub fn scroll_up(&mut self, amount: usize) {
+        for _ in 0..amount {
+            if !self.window.scroll_up(&self.vlines) {
+                break;
+            }
+        }
     }
 
-    pub fn scroll_down(&mut self) {
-        self.window.scroll_down(&self.vlines);
+    pub fn scroll_down(&mut self, amount: usize) {
+        for _ in 0..amount {
+            if !self.window.scroll_down(&self.vlines) {
+                break;
+            }
+        }
+    }
+
+    pub fn page_up(&mut self) {
+        for _ in 0..self.pane_height {
+            if !self.window.scroll_up(&self.vlines) {
+                break;
+            }
+        }
+    }
+
+    pub fn page_down(&mut self) {
+        for _ in 0..self.pane_height {
+            if !self.window.scroll_down(&self.vlines) {
+                break;
+            }
+        }
     }
 
     pub fn split_buffer(&mut self) {
@@ -139,5 +171,10 @@ impl Editor {
         let line = &self.vlines[self.vlines.first()];
         let buffer = &self.buffers[line.buffer_key];
         self.window = Window::new(buffer.start, self.vlines.empty());
+    }
+
+    pub fn update_pane_size(&mut self, width: u16, height: u16) {
+        self.pane_width = width;
+        self.pane_height = height;
     }
 }

@@ -72,12 +72,13 @@ Another text buffer.",
                     .split(f.area())
             };
 
-            for (i, editor) in editors.iter().enumerate() {
+            for (i, editor) in editors.iter_mut().enumerate() {
                 let mut block = Block::default().borders(Borders::ALL);
+                let inner = block.inner(chunks[i]);
+                editor.update_pane_size(inner.width, inner.height);
                 if i == active_editor {
                     block = block.title("Active");
                     let (x, y) = editor.cursor_position();
-                    let inner = block.inner(chunks[i]);
                     let offset = inner.offset(Offset { x, y }).intersection(inner);
                     if !offset.is_empty() {
                         f.set_cursor_position(offset);
@@ -139,12 +140,14 @@ Another text buffer.",
                 }) => return Ok(()),
                 Event::Key(KeyEvent {
                     code: KeyCode::PageUp,
+                    modifiers: KeyModifiers::ALT,
                     ..
                 }) => {
                     scroll = scroll.saturating_sub(5);
                 }
                 Event::Key(KeyEvent {
                     code: KeyCode::PageDown,
+                    modifiers: KeyModifiers::ALT,
                     ..
                 }) => {
                     scroll += 5;
