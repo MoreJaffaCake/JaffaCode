@@ -1,24 +1,22 @@
 use super::*;
 
-const HARD_LIMIT: usize = 200;
-static HSPACES: &str = "                                                                                                                                                                                                        ";
-static VSPACES: &str = "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n";
-
 #[derive(derive_more::Debug)]
 pub struct Buffer {
     #[debug(skip)]
     pub start: VLineKey,
     pub end: VLineKey,
     pub wrap_at: usize,
+    pub indent: usize,
 }
 
 impl Buffer {
-    pub fn new(start: VLineKey, end: VLineKey, wrap_at: usize) -> Self {
-        debug_assert!(wrap_at < HARD_LIMIT);
+    pub fn new(start: VLineKey, end: VLineKey, wrap_at: usize, indent: usize) -> Self {
+        debug_assert!(wrap_at < MAX_WRAP_AT);
         Self {
             start,
             end,
             wrap_at,
+            indent,
         }
     }
 
@@ -34,6 +32,7 @@ impl Buffer {
             mut char_idx,
             newlines,
         } = *window.position(vlines, ropes);
+        let len_utf8 = c.len_utf8();
         if newlines > 0 {
             let rope = window.cursor_rope_mut(vlines, ropes);
             rope.insert(char_idx, &VSPACES[..newlines]);
@@ -48,8 +47,8 @@ impl Buffer {
         window
             .cursor_rope_mut(vlines, ropes)
             .insert_char(char_idx, c);
-        vlines.insert(window, trailing_spaces + 1, ropes, self.wrap_at);
-        window.position(vlines, ropes).char_idx += 1;
+        vlines.insert(window, trailing_spaces + len_utf8, ropes, self.wrap_at);
+        window.position(vlines, ropes).char_idx += len_utf8;
         if c == '\n' || window.cur_x as usize + 1 >= self.wrap_at {
             window.move_cursor_next(vlines);
             window.cur_y += 1;
@@ -87,6 +86,7 @@ impl Buffer {
         window
             .cursor_rope_mut(vlines, ropes)
             .remove(char_idx..=char_idx);
+        // TODO not 1 but the size of the char
         vlines.remove(window, 1, ropes, self.wrap_at);
         let pos = window.position(vlines, ropes);
         pos.char_idx = char_idx;
@@ -116,6 +116,7 @@ impl Buffer {
                 window.cur_x = window.line_len(vlines, ropes);
                 let rope = window.cursor_rope_mut(vlines, ropes);
                 rope.remove(char_idx..=char_idx);
+                // TODO not 1 but the size of the char
                 vlines.remove(window, 1, ropes, self.wrap_at);
                 window.position(vlines, ropes).char_idx = char_idx;
             } else {
@@ -138,6 +139,7 @@ impl Buffer {
             }
             char_idx -= 1;
             rope.remove(char_idx..=char_idx);
+            // TODO not 1 but the size of the char
             vlines.remove(window, 1, ropes, self.wrap_at);
             window.position(vlines, ropes).char_idx = char_idx;
         } else {

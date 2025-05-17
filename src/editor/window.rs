@@ -40,14 +40,6 @@ impl Window {
         &mut ropes[vlines[self.cursor].buffer_key]
     }
 
-    pub fn get_display_lines<'v: 'r, 'r>(
-        &self,
-        vlines: &'v VLines,
-        ropes: &'r RopeMap,
-    ) -> impl Iterator<Item = RopeSlice<'r>> {
-        vlines.slices(self, ropes)
-    }
-
     pub fn scroll_up(&mut self, vlines: &VLines) -> bool {
         let prev = vlines[self.start].prev;
         if self.start_idx > 0 && vlines.contains_key(prev) {
@@ -98,6 +90,7 @@ impl Window {
         }
     }
 
+    // TODO indented buffer need to be de-indented OR re-implement hscroll?
     pub fn position(&mut self, vlines: &VLines, ropes: &RopeMap) -> &mut Position {
         if self.position.is_none() {
             let line = &vlines[self.cursor];

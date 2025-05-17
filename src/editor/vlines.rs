@@ -4,7 +4,7 @@ new_key_type! {
     pub struct VLineKey;
 }
 
-#[derive(derive_more::Debug, Default)]
+#[derive(derive_more::Debug)]
 pub struct VLines {
     #[debug(skip)]
     arena: SlotMap<VLineKey, VLine>,
@@ -25,6 +25,7 @@ impl VLines {
             buffer_key,
             start_byte: 0,
             end_byte: 0,
+            continuation: false,
         });
         arena.remove(empty);
 
@@ -46,6 +47,7 @@ impl VLines {
                 buffer_key,
                 start_byte: 0,
                 end_byte,
+                continuation: false,
             });
             instance.first = key;
             let key = instance.wrap(ropes, key, wrap_at);
@@ -64,6 +66,7 @@ impl VLines {
                 buffer_key,
                 start_byte: prev_end,
                 end_byte,
+                continuation: false,
             });
             instance.arena[prev].next = key;
             let key = instance.wrap(ropes, key, wrap_at);
@@ -76,6 +79,8 @@ impl VLines {
         instance
     }
 
+    // TODO first line should wrap at wrap_at but next lines should probably add indent to that
+    // number
     fn wrap(&mut self, ropes: &RopeMap, mut key: VLineKey, wrap_at: usize) -> VLineKey {
         loop {
             let line = &self.arena[key];
@@ -105,12 +110,20 @@ impl VLines {
     }
 
     #[inline(always)]
-    pub fn slices<'r>(&self, window: &Window, ropes: &'r RopeMap) -> SliceIterator<'_, 'r> {
+    pub fn slices<'r, 'b>(
+        &self,
+        window: &Window,
+        ropes: &'r RopeMap,
+        buffers: &'b BufferMap,
+    ) -> SliceIterator<'_, 'b, 'r> {
+        let dedent = buffers[self.arena[window.start].buffer_key].indent;
         SliceIterator {
             arena: &self.arena,
             ropes,
+            buffers,
             index: window.start,
             end: window.end,
+            dedent,
         }
     }
 
@@ -136,12 +149,17 @@ impl VLines {
 
     pub fn remove(&mut self, window: &Window, bytes: usize, ropes: &RopeMap, wrap_at: usize) {
         let mut key = window.cursor;
+        let buffer_key;
         {
             let line = &mut self.arena[key];
             line.end_byte -= bytes;
+            buffer_key = line.buffer_key;
             key = line.next;
         }
         while let Some(line) = self.arena.get_mut(key) {
+            if line.buffer_key != buffer_key {
+                break;
+            }
             line.start_byte -= bytes;
             line.end_byte -= bytes;
             key = line.next;
@@ -162,6 +180,7 @@ impl VLines {
                 buffer_key,
                 start_byte: prev_end,
                 end_byte: prev_end + 1,
+                continuation: false,
             });
             self.arena[prev].next = key;
             prev = key;
@@ -194,6 +213,7 @@ impl VLines {
             buffer_key: line.buffer_key,
             start_byte: split_byte,
             end_byte: line.end_byte,
+            continuation: true,
         };
         debug_assert!(new_line.start_byte != new_line.end_byte);
         let new_key = self.arena.insert(new_line);
@@ -226,14 +246,24 @@ impl VLines {
         self.arena.contains_key(key)
     }
 
-    pub fn update_rope(&mut self, mut key: VLineKey, new_buffer_key: BufferKey) -> VLineKey {
+    pub fn update_rope(
+        &mut self,
+        mut key: VLineKey,
+        new_buffer_key: BufferKey,
+        indent: usize,
+    ) -> VLineKey {
         let mut line = &mut self.arena[key];
         let old_buffer_key = line.buffer_key;
         let new_start_byte = line.start_byte;
+        let mut cumulative_indent = 0;
         loop {
             line.buffer_key = new_buffer_key;
-            line.start_byte -= new_start_byte;
-            line.end_byte -= new_start_byte;
+            line.start_byte -= new_start_byte + cumulative_indent;
+            line.end_byte -= new_start_byte + cumulative_indent;
+            if !line.continuation && line.end_byte - line.start_byte > indent {
+                line.end_byte -= indent;
+                cumulative_indent += indent;
+            }
             let next = line.next;
             let Some(next_line) = self.arena.get_mut(next) else {
                 break;
@@ -266,6 +296,7 @@ pub struct VLine {
     pub buffer_key: BufferKey,
     pub start_byte: usize,
     pub end_byte: usize,
+    pub continuation: bool,
 }
 
 impl VLine {
@@ -275,15 +306,23 @@ impl VLine {
     }
 }
 
-pub struct SliceIterator<'a, 'r> {
+#[derive(derive_more::Debug)]
+pub struct SliceIterator<'a, 'b, 'r> {
+    #[debug(skip)]
     arena: &'a SlotMap<VLineKey, VLine>,
+    #[debug(skip)]
+    buffers: &'b BufferMap,
+    #[debug(skip)]
     ropes: &'r RopeMap,
+    #[debug(skip)]
     index: VLineKey,
+    #[debug(skip)]
     end: VLineKey,
+    dedent: usize,
 }
 
-impl<'a, 'r: 'a> Iterator for SliceIterator<'a, 'r> {
-    type Item = RopeSlice<'a>;
+impl<'a, 'b, 'r> Iterator for SliceIterator<'a, 'b, 'r> {
+    type Item = DisplayLine<'r>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index == self.end {
@@ -291,6 +330,14 @@ impl<'a, 'r: 'a> Iterator for SliceIterator<'a, 'r> {
         }
         let line = self.arena.get(self.index)?;
         self.index = line.next;
-        Some(line.slice(&self.ropes))
+        let indent = if line.continuation {
+            0
+        } else {
+            self.buffers[line.buffer_key].indent - self.dedent
+        };
+        Some(DisplayLine {
+            slice: line.slice(&self.ropes),
+            indent: &HSPACES[..indent],
+        })
     }
 }

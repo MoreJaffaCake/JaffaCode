@@ -11,6 +11,11 @@ use self::window::*;
 use ropey::*;
 use slotmap::*;
 
+const MAX_WRAP_AT: usize = 200;
+const MIN_WRAP_AT: usize = 12;
+static HSPACES: &str = "                                                                                                                                                                                                        ";
+static VSPACES: &str = "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n";
+
 new_key_type! {
     pub struct BufferKey;
 }
@@ -46,7 +51,10 @@ impl Editor {
         let vlines = VLines::new(&ropes, buffer_key, 40);
 
         let mut buffers = BufferMap::new();
-        buffers.insert(buffer_key, Buffer::new(vlines.first(), vlines.last(), 40));
+        buffers.insert(
+            buffer_key,
+            Buffer::new(vlines.first(), vlines.last(), 40, 0),
+        );
 
         let window = Window::new(vlines.first(), vlines.empty());
 
@@ -106,9 +114,9 @@ impl Editor {
         self.window.move_cursor_at_end(&self.vlines, &self.ropes)
     }
 
-    pub fn get_display_lines(&self) -> impl Iterator<Item = RopeSlice> {
-        self.window
-            .get_display_lines(&self.vlines, &self.ropes)
+    pub fn get_display_lines(&self) -> impl Iterator<Item = DisplayLine> {
+        self.vlines
+            .slices(&self.window, &self.ropes, &self.buffers)
             .take(self.pane_height as _)
     }
 
@@ -149,16 +157,52 @@ impl Editor {
     }
 
     pub fn split_buffer(&mut self) {
-        let cursor = self.window.cursor;
-        let line = &self.vlines[cursor];
-        self.buffers[line.buffer_key].end = cursor;
+        let mut start = self.window.cursor;
+        let mut line = &self.vlines[start];
+        loop {
+            if !line.continuation {
+                break;
+            }
+            start = line.prev;
+            line = &self.vlines[line.prev];
+        }
+        let buffer = &mut self.buffers[line.buffer_key];
+        let end = buffer.end;
+        if buffer.start == start {
+            return;
+        }
+        buffer.end = start;
         let rope = &mut self.ropes[line.buffer_key];
         let char_idx = rope.byte_to_char(line.start_byte);
-        let new_rope = rope.split_off(char_idx);
+        let mut new_rope = rope.split_off(char_idx);
+        let indent = new_rope
+            .lines()
+            .filter(|line| line.len_chars() > 1)
+            .map(|line| line.chars().take_while(|c| *c == ' ').count())
+            .min()
+            .unwrap_or(0);
+        let mut wrap_at = buffer.wrap_at.saturating_sub(indent);
+        if wrap_at <= MIN_WRAP_AT {
+            wrap_at = buffer.wrap_at;
+        }
+        if indent != buffer.indent {
+            new_rope = new_rope
+                .lines()
+                .map(|slice| {
+                    if slice.len_chars() > indent {
+                        slice.slice(indent..)
+                    } else {
+                        slice
+                    }
+                })
+                .flat_map(|slice| slice.chunks())
+                .collect();
+        }
         let new_buffer_key = self.ropes.insert(new_rope);
-        let new_buffer = Buffer::new(cursor, self.vlines.empty(), 40);
+        dbg!(indent);
+        let new_buffer = Buffer::new(start, end, wrap_at, indent);
         self.buffers.insert(new_buffer_key, new_buffer);
-        self.vlines.update_rope(cursor, new_buffer_key);
+        self.vlines.update_rope(start, new_buffer_key, indent);
     }
 
     pub fn create_window(&mut self) {
@@ -177,4 +221,10 @@ impl Editor {
         self.pane_width = width;
         self.pane_height = height;
     }
+}
+
+#[derive(derive_more::Debug)]
+pub struct DisplayLine<'r> {
+    pub slice: RopeSlice<'r>,
+    pub indent: &'static str,
 }
