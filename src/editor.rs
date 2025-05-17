@@ -1,12 +1,12 @@
 mod buffer;
 #[cfg(feature = "crossterm")]
 mod crossterm;
-mod view;
 mod vlines;
+mod window;
 
 use self::buffer::*;
-use self::view::*;
 use self::vlines::*;
+use self::window::*;
 
 use ropey::*;
 use slotmap::*;
@@ -27,7 +27,7 @@ pub struct Editor {
     buffers: BufferMap,
     #[debug(skip)]
     active_buffer: BufferKey,
-    view: View,
+    window: Window,
 }
 
 impl Editor {
@@ -44,86 +44,100 @@ impl Editor {
         let vlines = VLines::new(&ropes, buffer_key, 40);
 
         let mut buffers = BufferMap::new();
-        buffers.insert(buffer_key, Buffer::new(buffer_key, 40));
+        buffers.insert(buffer_key, Buffer::new(vlines.first(), vlines.last(), 40));
 
-        let view = View::new(buffer_key, vlines.first());
+        let window = Window::new(vlines.first(), vlines.empty());
 
         Self {
             ropes,
             vlines,
             buffers,
             active_buffer: buffer_key,
-            view,
+            window,
         }
     }
 
     pub fn insert_char(&mut self, c: char) {
         let buffer = &mut self.buffers[self.active_buffer];
-        buffer.insert_char(&mut self.vlines, &mut self.ropes, &mut self.view, c)
+        buffer.insert_char(&mut self.vlines, &mut self.ropes, &mut self.window, c)
     }
 
     pub fn delete_char_forward(&mut self) {
         let buffer = &mut self.buffers[self.active_buffer];
-        buffer.delete_char_forward(&mut self.vlines, &mut self.ropes, &mut self.view)
+        buffer.delete_char_forward(&mut self.vlines, &mut self.ropes, &mut self.window)
     }
 
     pub fn delete_char_backward(&mut self) {
         let buffer = &mut self.buffers[self.active_buffer];
-        buffer.delete_char_backward(&mut self.vlines, &mut self.ropes, &mut self.view)
+        buffer.delete_char_backward(&mut self.vlines, &mut self.ropes, &mut self.window)
     }
 
     pub fn move_cursor_up(&mut self) {
-        self.view.move_cursor_up(&self.vlines)
+        self.window.move_cursor_up(&self.vlines)
     }
 
     pub fn move_cursor_down(&mut self) {
-        self.view.move_cursor_down(&self.vlines)
+        self.window.move_cursor_down(&self.vlines)
     }
 
     pub fn move_cursor_left(&mut self) {
-        self.view.move_cursor_left(&self.vlines, &self.ropes)
+        self.window.move_cursor_left(&self.vlines, &self.ropes)
     }
 
     pub fn move_cursor_right(&mut self) {
-        self.view.move_cursor_right(&self.vlines, &self.buffers)
+        self.window.move_cursor_right(&self.vlines, &self.buffers)
     }
 
     pub fn move_cursor_at_0(&mut self) {
-        self.view.move_cursor_at_0()
+        self.window.move_cursor_at_0()
     }
 
     pub fn move_cursor_at_start(&mut self) {
-        self.view.move_cursor_at_start(&self.vlines, &self.ropes)
+        self.window.move_cursor_at_start(&self.vlines, &self.ropes)
     }
 
     pub fn move_cursor_at_end(&mut self) {
-        self.view.move_cursor_at_end(&self.vlines, &self.ropes)
+        self.window.move_cursor_at_end(&self.vlines, &self.ropes)
     }
 
     pub fn get_display_lines(&self) -> impl Iterator<Item = RopeSlice> {
-        self.view.get_display_lines(&self.vlines, &self.ropes)
+        self.window.get_display_lines(&self.vlines, &self.ropes)
     }
 
     pub fn cursor_position<T: From<u16>>(&self) -> (T, T) {
-        self.view.cursor_position()
+        self.window.cursor_position()
     }
 
     pub fn scroll_up(&mut self) {
-        self.view.scroll_up(&self.vlines);
+        self.window.scroll_up(&self.vlines);
     }
 
     pub fn scroll_down(&mut self) {
-        self.view.scroll_down(&self.vlines);
+        self.window.scroll_down(&self.vlines);
     }
 
     pub fn split_buffer(&mut self) {
-        let line = &self.vlines[self.view.cursor];
+        let cursor = self.window.cursor;
+        let line = &self.vlines[cursor];
+        self.buffers[line.buffer_key].end = cursor;
         let rope = &mut self.ropes[line.buffer_key];
         let char_idx = rope.byte_to_char(line.start_byte);
         let new_rope = rope.split_off(char_idx);
         let new_buffer_key = self.ropes.insert(new_rope);
-        let new_buffer = Buffer::new(new_buffer_key, 40);
+        let new_buffer = Buffer::new(cursor, self.vlines.empty(), 40);
         self.buffers.insert(new_buffer_key, new_buffer);
-        self.vlines.update_rope(self.view.cursor, new_buffer_key);
+        self.vlines.update_rope(cursor, new_buffer_key);
+    }
+
+    pub fn create_window(&mut self) {
+        let line = &self.vlines[self.window.cursor];
+        let buffer = &self.buffers[line.buffer_key];
+        self.window = Window::new(buffer.start, buffer.end);
+    }
+
+    pub fn root_window(&mut self) {
+        let line = &self.vlines[self.vlines.first()];
+        let buffer = &self.buffers[line.buffer_key];
+        self.window = Window::new(buffer.start, self.vlines.empty());
     }
 }

@@ -12,6 +12,8 @@ pub struct VLines {
     empty: VLineKey,
     #[debug(skip)]
     first: VLineKey,
+    #[debug(skip)]
+    last: VLineKey,
 }
 
 impl VLines {
@@ -30,6 +32,7 @@ impl VLines {
             arena,
             empty,
             first: empty,
+            last: empty,
         };
         let rope = &ropes[buffer_key];
         let mut it = rope.lines();
@@ -69,6 +72,8 @@ impl VLines {
             prev = key;
         }
 
+        instance.last = prev;
+
         instance
     }
 
@@ -99,16 +104,17 @@ impl VLines {
     }
 
     #[inline(always)]
-    pub fn slices<'r>(&self, view: &View, ropes: &'r RopeMap) -> SliceIterator<'_, 'r> {
+    pub fn slices<'r>(&self, window: &Window, ropes: &'r RopeMap) -> SliceIterator<'_, 'r> {
         SliceIterator {
             arena: &self.arena,
             ropes,
-            index: view.start,
+            index: window.start,
+            end: window.end,
         }
     }
 
-    pub fn insert(&mut self, view: &View, bytes: usize, ropes: &RopeMap, wrap_at: usize) {
-        let mut key = view.cursor;
+    pub fn insert(&mut self, window: &Window, bytes: usize, ropes: &RopeMap, wrap_at: usize) {
+        let mut key = window.cursor;
         let buffer_key;
         {
             let line = &mut self.arena[key];
@@ -124,11 +130,11 @@ impl VLines {
             line.end_byte += bytes;
             key = line.next;
         }
-        self.wrap(ropes, view.cursor, wrap_at);
+        self.wrap(ropes, window.cursor, wrap_at);
     }
 
-    pub fn remove(&mut self, view: &View, bytes: usize, ropes: &RopeMap, wrap_at: usize) {
-        let mut key = view.cursor;
+    pub fn remove(&mut self, window: &Window, bytes: usize, ropes: &RopeMap, wrap_at: usize) {
+        let mut key = window.cursor;
         {
             let line = &mut self.arena[key];
             line.end_byte -= bytes;
@@ -139,11 +145,11 @@ impl VLines {
             line.end_byte -= bytes;
             key = line.next;
         }
-        self.wrap(ropes, view.cursor, wrap_at);
+        self.wrap(ropes, window.cursor, wrap_at);
     }
 
-    pub fn insert_newlines(&mut self, view: &mut View, n: usize) {
-        let mut prev = view.cursor;
+    pub fn insert_newlines(&mut self, window: &mut Window, n: usize) {
+        let mut prev = window.cursor;
         let line = &self.arena[prev];
         let buffer_key = line.buffer_key;
         let mut prev_end = line.end_byte;
@@ -161,8 +167,8 @@ impl VLines {
             prev_end += 1;
         }
         self.arena[prev].next = next;
-        view.cursor = prev;
-        view.cursor_idx += n;
+        window.cursor = prev;
+        window.cursor_idx += n;
     }
 
     #[inline]
@@ -200,8 +206,18 @@ impl VLines {
     }
 
     #[inline(always)]
+    pub fn empty(&self) -> VLineKey {
+        self.empty
+    }
+
+    #[inline(always)]
     pub fn first(&self) -> VLineKey {
         self.first
+    }
+
+    #[inline(always)]
+    pub fn last(&self) -> VLineKey {
+        self.last
     }
 
     #[inline(always)]
@@ -209,7 +225,7 @@ impl VLines {
         self.arena.contains_key(key)
     }
 
-    pub fn update_rope(&mut self, key: VLineKey, new_buffer_key: BufferKey) {
+    pub fn update_rope(&mut self, mut key: VLineKey, new_buffer_key: BufferKey) -> VLineKey {
         let mut line = &mut self.arena[key];
         let old_buffer_key = line.buffer_key;
         let new_start_byte = line.start_byte;
@@ -217,15 +233,17 @@ impl VLines {
             line.buffer_key = new_buffer_key;
             line.start_byte -= new_start_byte;
             line.end_byte -= new_start_byte;
-            let key = line.next;
-            let Some(next_line) = self.arena.get_mut(key) else {
+            let next = line.next;
+            let Some(next_line) = self.arena.get_mut(next) else {
                 break;
             };
             if next_line.buffer_key != old_buffer_key {
                 break;
             }
+            key = next;
             line = next_line;
         }
+        key
     }
 }
 
@@ -260,12 +278,16 @@ pub struct SliceIterator<'a, 'r> {
     arena: &'a SlotMap<VLineKey, VLine>,
     ropes: &'r RopeMap,
     index: VLineKey,
+    end: VLineKey,
 }
 
 impl<'a, 'r: 'a> Iterator for SliceIterator<'a, 'r> {
     type Item = RopeSlice<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if self.index == self.end {
+            return None;
+        }
         let line = self.arena.get(self.index)?;
         self.index = line.next;
         Some(line.slice(&self.ropes))

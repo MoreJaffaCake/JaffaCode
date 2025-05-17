@@ -1,10 +1,12 @@
 use super::*;
 
 #[derive(derive_more::Debug)]
-pub struct View {
+pub struct Window {
     #[debug(skip)]
     pub start: VLineKey,
     pub start_idx: usize,
+    #[debug(skip)]
+    pub end: VLineKey,
     #[debug(skip)]
     pub cursor: VLineKey,
     pub cursor_idx: usize,
@@ -20,11 +22,12 @@ pub struct Position {
     pub newlines: usize,
 }
 
-impl View {
-    pub fn new(buffer_key: BufferKey, start: VLineKey) -> Self {
+impl Window {
+    pub fn new(start: VLineKey, end: VLineKey) -> Self {
         Self {
             start,
             start_idx: 0,
+            end,
             cursor: start,
             cursor_idx: 0,
             position: None,
@@ -47,7 +50,7 @@ impl View {
 
     pub fn scroll_up(&mut self, vlines: &VLines) -> bool {
         let prev = vlines[self.start].prev;
-        if vlines.contains_key(prev) {
+        if self.start_idx > 0 && vlines.contains_key(prev) {
             self.start = prev;
             self.start_idx -= 1;
             self.move_cursor_prev(vlines);
@@ -60,7 +63,7 @@ impl View {
 
     pub fn scroll_down(&mut self, vlines: &VLines) -> bool {
         let next = vlines[self.start].next;
-        if vlines.contains_key(next) {
+        if next != self.end && vlines.contains_key(next) {
             self.start = next;
             self.start_idx += 1;
             self.move_cursor_next(vlines);
@@ -74,7 +77,7 @@ impl View {
     #[inline(always)]
     pub fn move_cursor_prev(&mut self, vlines: &VLines) -> bool {
         let prev = vlines[self.cursor].prev;
-        if vlines.contains_key(prev) {
+        if self.cursor_idx > 0 && vlines.contains_key(prev) {
             self.cursor = prev;
             self.cursor_idx -= 1;
             true
@@ -86,7 +89,7 @@ impl View {
     #[inline(always)]
     pub fn move_cursor_next(&mut self, vlines: &VLines) -> bool {
         let next = vlines[self.cursor].next;
-        if vlines.contains_key(next) {
+        if next != self.end && vlines.contains_key(next) {
             self.cursor = next;
             self.cursor_idx += 1;
             true

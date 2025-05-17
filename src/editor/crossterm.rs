@@ -100,6 +100,20 @@ impl Editor {
             }) => {
                 self.split_buffer();
             }
+            Event::Key(KeyEvent {
+                code: KeyCode::F(7),
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.create_window();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::F(6),
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.root_window();
+            }
             Event::Mouse(_) => {}
             _ => {
                 dbg!(event);
