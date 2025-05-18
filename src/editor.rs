@@ -56,7 +56,7 @@ impl Editor {
             Buffer::new(vlines.first(), vlines.last(), 40, 0),
         );
 
-        let window = Window::new(vlines.first(), vlines.empty());
+        let window = Window::new(&buffers, &vlines, vlines.first(), VLineKey::null());
 
         Self {
             ropes,
@@ -208,13 +208,13 @@ impl Editor {
     pub fn create_window(&mut self) {
         let line = &self.vlines[self.window.cursor];
         let buffer = &self.buffers[line.buffer_key];
-        self.window = Window::new(buffer.start, buffer.end);
+        self.window = Window::new(&self.buffers, &self.vlines, buffer.start, buffer.end);
     }
 
     pub fn root_window(&mut self) {
         let line = &self.vlines[self.vlines.first()];
         let buffer = &self.buffers[line.buffer_key];
-        self.window = Window::new(buffer.start, self.vlines.empty());
+        self.window = Window::new(&self.buffers, &self.vlines, buffer.start, VLineKey::null());
     }
 
     pub fn update_pane_size(&mut self, width: u16, height: u16) {

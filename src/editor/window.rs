@@ -13,6 +13,7 @@ pub struct Window {
     pub position: Option<Position>,
     pub cur_y: u16,
     pub cur_x: u16,
+    pub indent: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -23,7 +24,7 @@ pub struct Position {
 }
 
 impl Window {
-    pub fn new(start: VLineKey, end: VLineKey) -> Self {
+    pub fn new(buffers: &BufferMap, vlines: &VLines, start: VLineKey, end: VLineKey) -> Self {
         Self {
             start,
             start_idx: 0,
@@ -33,6 +34,7 @@ impl Window {
             position: None,
             cur_y: 0,
             cur_x: 0,
+            indent: buffers[vlines[start].buffer_key].indent,
         }
     }
 

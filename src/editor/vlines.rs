@@ -9,8 +9,6 @@ pub struct VLines {
     #[debug(skip)]
     arena: SlotMap<VLineKey, VLine>,
     #[debug(skip)]
-    empty: VLineKey,
-    #[debug(skip)]
     first: VLineKey,
     #[debug(skip)]
     last: VLineKey,
@@ -18,22 +16,11 @@ pub struct VLines {
 
 impl VLines {
     pub fn new(ropes: &RopeMap, buffer_key: BufferKey, wrap_at: usize) -> Self {
-        let mut arena = SlotMap::<VLineKey, VLine>::with_key();
-        let empty = arena.insert_with_key(|k| VLine {
-            prev: k,
-            next: k,
-            buffer_key,
-            start_byte: 0,
-            end_byte: 0,
-            continuation: false,
-        });
-        arena.remove(empty);
-
+        let arena = SlotMap::<VLineKey, VLine>::with_key();
         let mut instance = Self {
             arena,
-            empty,
-            first: empty,
-            last: empty,
+            first: VLineKey::null(),
+            last: VLineKey::null(),
         };
         let rope = &ropes[buffer_key];
         let mut it = rope.lines();
@@ -42,8 +29,8 @@ impl VLines {
             let line = it.next().unwrap();
             let end_byte = line.len_bytes();
             let key = instance.arena.insert(VLine {
-                prev: empty,
-                next: empty,
+                prev: VLineKey::null(),
+                next: VLineKey::null(),
                 buffer_key,
                 start_byte: 0,
                 end_byte,
@@ -62,7 +49,7 @@ impl VLines {
             let end_byte = prev_end + len_bytes;
             let key = instance.arena.insert(VLine {
                 prev: prev,
-                next: empty,
+                next: VLineKey::null(),
                 buffer_key,
                 start_byte: prev_end,
                 end_byte,
@@ -116,14 +103,13 @@ impl VLines {
         ropes: &'r RopeMap,
         buffers: &'b BufferMap,
     ) -> SliceIterator<'_, 'b, 'r> {
-        let dedent = buffers[self.arena[window.start].buffer_key].indent;
         SliceIterator {
             arena: &self.arena,
             ropes,
             buffers,
             index: window.start,
             end: window.end,
-            dedent,
+            dedent: window.indent,
         }
     }
 
@@ -176,7 +162,7 @@ impl VLines {
         for _ in 0..n {
             let key = self.arena.insert(VLine {
                 prev: prev,
-                next: self.empty,
+                next: VLineKey::null(),
                 buffer_key,
                 start_byte: prev_end,
                 end_byte: prev_end + 1,
@@ -224,11 +210,6 @@ impl VLines {
         line.end_byte = split_byte;
         line.next = new_key;
         new_key
-    }
-
-    #[inline(always)]
-    pub fn empty(&self) -> VLineKey {
-        self.empty
     }
 
     #[inline(always)]
