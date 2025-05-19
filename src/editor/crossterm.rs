@@ -13,9 +13,9 @@ impl Editor {
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Char(c),
-                modifiers: KeyModifiers::NONE,
+                modifiers,
                 ..
-            }) => {
+            }) if modifiers == KeyModifiers::SHIFT || modifiers == KeyModifiers::NONE => {
                 self.insert_char(c);
             }
             Event::Key(KeyEvent {

@@ -21,6 +21,7 @@ pub struct Position {
     pub char_idx: usize,
     pub trailing_spaces: usize,
     pub newlines: usize,
+    pub relative_x: usize,
 }
 
 impl Window {
@@ -68,7 +69,6 @@ impl Window {
         }
     }
 
-    #[inline(always)]
     pub fn move_cursor_prev(&mut self, vlines: &VLines) -> bool {
         let prev = vlines[self.cursor].prev;
         if self.cursor_idx > 0 && vlines.contains_key(prev) {
@@ -80,7 +80,6 @@ impl Window {
         }
     }
 
-    #[inline(always)]
     pub fn move_cursor_next(&mut self, vlines: &VLines) -> bool {
         let next = vlines[self.cursor].next;
         if next != self.end && vlines.contains_key(next) {
@@ -92,51 +91,63 @@ impl Window {
         }
     }
 
-    // TODO indented buffer need to be de-indented OR re-implement hscroll?
-    pub fn position(&mut self, vlines: &VLines, ropes: &RopeMap) -> &mut Position {
+    #[inline(always)]
+    fn position(&mut self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) -> Position {
         if self.position.is_none() {
-            let line = &vlines[self.cursor];
-            let rope = &ropes[line.buffer_key];
-            let mut char_idx = rope.byte_to_char(line.start_byte);
-            let newlines = (self.start_idx + self.cur_y as usize).saturating_sub(self.cursor_idx);
-            let trailing_spaces: usize;
-            let len_chars = line.slice(ropes).len_chars();
-            if newlines > 0 {
-                char_idx = rope.byte_to_char(line.end_byte);
-                trailing_spaces = self.cur_x as usize;
-            } else if len_chars >= self.cur_x as usize {
-                char_idx += self.cur_x as usize;
-                trailing_spaces = 0;
-            } else {
-                let line_len = len_chars.saturating_sub(1);
-                char_idx += line_len;
-                trailing_spaces = self.cur_x as usize - line_len;
-            }
-            self.position = Some(Position {
-                trailing_spaces,
-                char_idx,
-                newlines,
-            });
+            self.position = Some(self.get_position(vlines, ropes, buffers));
         }
-        dbg!(self.position.as_ref().unwrap());
+        dbg!(self.position.unwrap())
+    }
+
+    #[inline(always)]
+    fn position_as_mut(&mut self) -> &mut Position {
         self.position.as_mut().unwrap()
     }
 
     #[inline(always)]
-    pub fn clear_position(&mut self) {
+    fn clear_position(&mut self) {
         self.position = None;
     }
 
-    #[inline(always)]
-    pub fn line_len(&self, vlines: &VLines, ropes: &RopeMap) -> u16 {
-        vlines[self.cursor]
-            .slice(ropes)
-            .len_chars()
-            .saturating_sub(1) as _
+    fn get_position(&self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) -> Position {
+        let line = &vlines[self.cursor];
+        let indent = buffers[line.buffer_key].indent;
+        let relative_x = self.cur_x as usize + self.indent - indent;
+        let rope = &ropes[line.buffer_key];
+        let mut char_idx = rope.byte_to_char(line.start_byte);
+        let newlines = (self.start_idx + self.cur_y as usize).saturating_sub(self.cursor_idx);
+        let trailing_spaces: usize;
+        let len_chars = line.slice(ropes).len_chars();
+        if newlines > 0 {
+            char_idx = rope.byte_to_char(line.end_byte);
+            trailing_spaces = relative_x as usize;
+        } else if len_chars >= relative_x as usize {
+            char_idx += relative_x as usize;
+            trailing_spaces = 0;
+        } else {
+            let line_len = len_chars.saturating_sub(1);
+            char_idx += line_len;
+            trailing_spaces = relative_x as usize - line_len;
+        }
+        Position {
+            trailing_spaces,
+            char_idx,
+            newlines,
+            relative_x,
+        }
     }
 
-    pub fn slice<'r>(&self, vlines: &VLines, ropes: &'r RopeMap) -> RopeSlice<'r> {
+    #[inline(always)]
+    fn slice<'r>(&self, vlines: &VLines, ropes: &'r RopeMap) -> RopeSlice<'r> {
         vlines[self.cursor].slice(ropes)
+    }
+
+    #[inline(always)]
+    fn line_len(&self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) -> usize {
+        let line = &vlines[self.cursor];
+        let buffer = &buffers[line.buffer_key];
+        let line_len = line.slice(ropes).len_chars().saturating_sub(1);
+        line_len + buffer.indent - self.indent
     }
 
     pub fn cursor_position<T: From<u16>>(&self) -> (T, T) {
@@ -162,7 +173,7 @@ impl Window {
         self.clear_position();
     }
 
-    pub fn move_cursor_left(&mut self, vlines: &VLines, ropes: &RopeMap) {
+    pub fn move_cursor_left(&mut self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) {
         if self.cur_x > 0 {
             self.cur_x -= 1;
         } else {
@@ -174,14 +185,14 @@ impl Window {
             } else {
                 return;
             }
-            self.cur_x = self.line_len(vlines, ropes);
+            self.cur_x = Buffer::line_len(vlines, ropes, buffers, self.cursor) as _;
         }
         self.clear_position();
     }
 
     pub fn move_cursor_right(&mut self, vlines: &VLines, buffers: &BufferMap) {
         let buffer = &buffers[vlines[self.cursor].buffer_key];
-        if self.cur_x as usize + 1 < buffer.wrap_at {
+        if self.cur_x as usize + 1 < buffer.wrap_at + buffer.indent {
             self.cur_x += 1;
         } else {
             self.cur_x = 0;
@@ -196,18 +207,19 @@ impl Window {
         self.clear_position();
     }
 
-    pub fn move_cursor_at_start(&mut self, vlines: &VLines, ropes: &RopeMap) {
-        let new_cur_x = self
+    pub fn move_cursor_at_start(&mut self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) {
+        self.cur_x = self
             .slice(vlines, ropes)
             .chars()
             .enumerate()
             .find_map(|(i, c)| (!c.is_whitespace()).then_some(i as u16))
             .unwrap_or(0);
-        self.cur_x = new_cur_x;
+        let buffer = &buffers[vlines[self.cursor].buffer_key];
+        self.cur_x += buffer.indent.saturating_sub(self.indent) as u16;
         self.clear_position();
     }
 
-    pub fn move_cursor_at_end(&mut self, vlines: &VLines, ropes: &RopeMap) {
+    pub fn move_cursor_at_end(&mut self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) {
         let slice = self.slice(vlines, ropes);
         let len_chars = slice.len_chars();
         self.cur_x = slice
@@ -216,6 +228,146 @@ impl Window {
             .enumerate()
             .find_map(|(i, c)| (!c.is_whitespace()).then_some((len_chars - i) as u16))
             .unwrap_or(0);
+        let buffer = &buffers[vlines[self.cursor].buffer_key];
+        self.cur_x += buffer.indent.saturating_sub(self.indent) as u16;
         self.clear_position();
+    }
+
+    pub fn delete_char_forward(
+        &mut self,
+        vlines: &mut VLines,
+        ropes: &mut RopeMap,
+        buffers: &BufferMap,
+    ) {
+        let Position {
+            trailing_spaces,
+            mut char_idx,
+            ..
+        } = self.position(vlines, ropes, buffers);
+        let line = &vlines[self.cursor];
+        let buffer = &buffers[line.buffer_key];
+        if char_idx >= ropes[line.buffer_key].len_chars() {
+            return;
+        }
+        if trailing_spaces > 0 {
+            buffer.insert(
+                vlines,
+                ropes,
+                char_idx,
+                &HSPACES[..trailing_spaces],
+                self.cursor,
+            );
+            char_idx += trailing_spaces;
+        }
+        buffer.remove(vlines, ropes, char_idx, self.cursor);
+        let position = self.position_as_mut();
+        position.char_idx = char_idx;
+        position.trailing_spaces = 0;
+    }
+
+    pub fn insert_char(
+        &mut self,
+        vlines: &mut VLines,
+        ropes: &mut RopeMap,
+        buffers: &BufferMap,
+        c: char,
+    ) {
+        let Position {
+            trailing_spaces,
+            mut char_idx,
+            newlines,
+            relative_x,
+            ..
+        } = self.position(vlines, ropes, buffers);
+        let line = &vlines[self.cursor];
+        let buffer = &buffers[line.buffer_key];
+        if newlines > 0 {
+            buffer.insert(vlines, ropes, char_idx, &VSPACES[..newlines], self.cursor);
+            char_idx += newlines.saturating_sub(1);
+        }
+        if trailing_spaces > 0 {
+            buffer.insert(
+                vlines,
+                ropes,
+                char_idx,
+                &HSPACES[..trailing_spaces],
+                self.cursor,
+            );
+            char_idx += trailing_spaces;
+        }
+        buffer.insert_char(vlines, ropes, char_idx, c, self.cursor);
+        self.position_as_mut().char_idx += 1;
+        if c == '\n' || relative_x + 1 >= buffer.wrap_at {
+            self.move_cursor_next(vlines);
+            self.cur_y += 1;
+            self.cur_x = (buffer.indent - self.indent) as _;
+            self.clear_position();
+        } else {
+            self.cur_x += 1;
+            let pos = self.position_as_mut();
+            pos.char_idx = char_idx + 1;
+            pos.trailing_spaces = 0;
+            pos.newlines = 0;
+            pos.relative_x += 1;
+        }
+    }
+
+    pub fn delete_char_backward(
+        &mut self,
+        vlines: &mut VLines,
+        ropes: &mut RopeMap,
+        buffers: &BufferMap,
+    ) {
+        let Position {
+            mut char_idx,
+            trailing_spaces,
+            newlines,
+            relative_x,
+        } = self.position(vlines, ropes, buffers);
+        let line = &vlines[self.cursor];
+        let buffer = &buffers[line.buffer_key];
+        if char_idx == 0 {
+            return;
+        } else if relative_x > 0 {
+            self.cur_x -= 1;
+            self.position_as_mut().relative_x -= 1;
+        } else if self.cur_y > 0 {
+            self.cur_y -= 1;
+            if newlines == 0 {
+                char_idx -= 1;
+                self.move_cursor_prev(vlines);
+                let line_len = self.line_len(vlines, ropes, buffers);
+                self.cur_x = line_len as u16;
+                buffer.remove(vlines, ropes, char_idx, self.cursor);
+                let position = self.position_as_mut();
+                position.char_idx = char_idx;
+                position.relative_x = line_len;
+            } else {
+                self.position_as_mut().newlines -= 1;
+                if newlines == 1 {
+                    let line_len = self.line_len(vlines, ropes, buffers);
+                    self.cur_x = line_len as u16;
+                    self.position_as_mut().relative_x = line_len;
+                }
+            }
+            return;
+        } else {
+            self.scroll_up(vlines);
+            self.move_cursor_prev(vlines);
+            let line_len = self.line_len(vlines, ropes, buffers);
+            self.cur_x = line_len as u16;
+            self.position_as_mut().relative_x = line_len;
+        }
+        if trailing_spaces == 0 {
+            let rope = self.cursor_rope_mut(vlines, ropes);
+            if char_idx == rope.len_chars() {
+                char_idx -= 1;
+            }
+            char_idx -= 1;
+            buffer.remove(vlines, ropes, char_idx, self.cursor);
+            self.position_as_mut().char_idx = char_idx;
+        } else {
+            self.position_as_mut().trailing_spaces -= 1;
+        }
     }
 }

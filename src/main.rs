@@ -86,9 +86,15 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                 let p = Paragraph::new(
                     editor
                         .get_display_lines()
-                        .map(|DisplayLine { slice, indent }| {
-                            Line::from(vec![Span::raw(indent), Span::raw(slice)])
-                        })
+                        .map(
+                            |DisplayLine {
+                                 slice,
+                                 indent,
+                                 continuation: _,
+                             }| {
+                                Line::from(vec![Span::raw(indent), Span::raw(slice)])
+                            },
+                        )
                         .collect::<Vec<_>>(),
                 )
                 .block(block);

@@ -30,8 +30,6 @@ pub struct Editor {
     vlines: VLines,
     #[debug(skip)]
     buffers: BufferMap,
-    #[debug(skip)]
-    active_buffer: BufferKey,
     window: Window,
     pane_width: u16,
     pane_height: u16,
@@ -46,14 +44,14 @@ impl Editor {
         }
 
         let mut ropes = RopeMap::with_key();
-        let buffer_key = ropes.insert(rope);
+        let rope_key = ropes.insert(rope);
 
-        let vlines = VLines::new(&ropes, buffer_key, 40);
+        let vlines = VLines::new(&ropes, rope_key, 40);
 
         let mut buffers = BufferMap::new();
         buffers.insert(
-            buffer_key,
-            Buffer::new(vlines.first(), vlines.last(), 40, 0),
+            rope_key,
+            Buffer::new(rope_key, vlines.first(), vlines.last(), 40, 0),
         );
 
         let window = Window::new(&buffers, &vlines, vlines.first(), VLineKey::null());
@@ -62,7 +60,6 @@ impl Editor {
             ropes,
             vlines,
             buffers,
-            active_buffer: buffer_key,
             window,
             pane_width: 0,
             pane_height: 0,
@@ -70,18 +67,18 @@ impl Editor {
     }
 
     pub fn insert_char(&mut self, c: char) {
-        let buffer = &mut self.buffers[self.active_buffer];
-        buffer.insert_char(&mut self.vlines, &mut self.ropes, &mut self.window, c)
+        self.window
+            .insert_char(&mut self.vlines, &mut self.ropes, &self.buffers, c)
     }
 
     pub fn delete_char_forward(&mut self) {
-        let buffer = &mut self.buffers[self.active_buffer];
-        buffer.delete_char_forward(&mut self.vlines, &mut self.ropes, &mut self.window)
+        self.window
+            .delete_char_forward(&mut self.vlines, &mut self.ropes, &self.buffers)
     }
 
     pub fn delete_char_backward(&mut self) {
-        let buffer = &mut self.buffers[self.active_buffer];
-        buffer.delete_char_backward(&mut self.vlines, &mut self.ropes, &mut self.window)
+        self.window
+            .delete_char_backward(&mut self.vlines, &mut self.ropes, &self.buffers)
     }
 
     pub fn move_cursor_up(&mut self) {
@@ -95,7 +92,8 @@ impl Editor {
     }
 
     pub fn move_cursor_left(&mut self) {
-        self.window.move_cursor_left(&self.vlines, &self.ropes)
+        self.window
+            .move_cursor_left(&self.vlines, &self.ropes, &self.buffers)
     }
 
     pub fn move_cursor_right(&mut self) {
@@ -107,11 +105,13 @@ impl Editor {
     }
 
     pub fn move_cursor_at_start(&mut self) {
-        self.window.move_cursor_at_start(&self.vlines, &self.ropes)
+        self.window
+            .move_cursor_at_start(&self.vlines, &self.ropes, &self.buffers)
     }
 
     pub fn move_cursor_at_end(&mut self) {
-        self.window.move_cursor_at_end(&self.vlines, &self.ropes)
+        self.window
+            .move_cursor_at_end(&self.vlines, &self.ropes, &self.buffers)
     }
 
     pub fn get_display_lines(&self) -> impl Iterator<Item = DisplayLine> {
@@ -198,11 +198,11 @@ impl Editor {
                 .flat_map(|slice| slice.chunks())
                 .collect();
         }
-        let new_buffer_key = self.ropes.insert(new_rope);
-        dbg!(indent);
-        let new_buffer = Buffer::new(start, end, wrap_at, indent);
-        self.buffers.insert(new_buffer_key, new_buffer);
-        self.vlines.update_rope(start, new_buffer_key, indent);
+        let new_rope_key = self.ropes.insert(new_rope);
+        dbg!(indent, wrap_at);
+        let new_buffer = Buffer::new(new_rope_key, start, end, wrap_at, indent);
+        self.buffers.insert(new_rope_key, new_buffer);
+        self.vlines.update_rope(start, new_rope_key, indent);
     }
 
     pub fn create_window(&mut self) {
@@ -227,4 +227,5 @@ impl Editor {
 pub struct DisplayLine<'r> {
     pub slice: RopeSlice<'r>,
     pub indent: &'static str,
+    pub continuation: bool,
 }

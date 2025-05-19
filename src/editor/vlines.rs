@@ -73,7 +73,7 @@ impl VLines {
             let line = &self.arena[key];
             let slice = line.slice(ropes);
             let len_chars = slice.len_chars();
-            if len_chars <= wrap_at + 1 {
+            if len_chars <= wrap_at {
                 let newline_idx = slice
                     .chars()
                     .enumerate()
@@ -82,7 +82,7 @@ impl VLines {
                     break;
                 } else if let Some(newline_idx) = newline_idx {
                     let byte_idx = slice.char_to_byte(newline_idx + 1);
-                    key = self.split_line(key, byte_idx);
+                    key = self.split_line(key, byte_idx, false);
                 } else if self.arena.contains_key(line.next) {
                     self.merge_next(key);
                 } else {
@@ -90,7 +90,7 @@ impl VLines {
                 }
             } else {
                 let byte_idx = slice.char_to_byte(wrap_at);
-                key = self.split_line(key, byte_idx);
+                key = self.split_line(key, byte_idx, true);
             }
         }
         key
@@ -113,8 +113,8 @@ impl VLines {
         }
     }
 
-    pub fn insert(&mut self, window: &Window, bytes: usize, ropes: &RopeMap, wrap_at: usize) {
-        let mut key = window.cursor;
+    pub fn insert(&mut self, ropes: &RopeMap, at: VLineKey, bytes: usize, wrap_at: usize) {
+        let mut key = at;
         let buffer_key;
         {
             let line = &mut self.arena[key];
@@ -130,11 +130,11 @@ impl VLines {
             line.end_byte += bytes;
             key = line.next;
         }
-        self.wrap(ropes, window.cursor, wrap_at);
+        self.wrap(ropes, at, wrap_at);
     }
 
-    pub fn remove(&mut self, window: &Window, bytes: usize, ropes: &RopeMap, wrap_at: usize) {
-        let mut key = window.cursor;
+    pub fn remove(&mut self, ropes: &RopeMap, at: VLineKey, bytes: usize, wrap_at: usize) {
+        let mut key = at;
         let buffer_key;
         {
             let line = &mut self.arena[key];
@@ -150,31 +150,7 @@ impl VLines {
             line.end_byte -= bytes;
             key = line.next;
         }
-        self.wrap(ropes, window.cursor, wrap_at);
-    }
-
-    pub fn insert_newlines(&mut self, window: &mut Window, n: usize) {
-        let mut prev = window.cursor;
-        let line = &self.arena[prev];
-        let buffer_key = line.buffer_key;
-        let mut prev_end = line.end_byte;
-        let next = line.next;
-        for _ in 0..n {
-            let key = self.arena.insert(VLine {
-                prev: prev,
-                next: VLineKey::null(),
-                buffer_key,
-                start_byte: prev_end,
-                end_byte: prev_end + 1,
-                continuation: false,
-            });
-            self.arena[prev].next = key;
-            prev = key;
-            prev_end += 1;
-        }
-        self.arena[prev].next = next;
-        window.cursor = prev;
-        window.cursor_idx += n;
+        self.wrap(ropes, at, wrap_at);
     }
 
     #[inline]
@@ -189,7 +165,7 @@ impl VLines {
     }
 
     #[inline]
-    fn split_line(&mut self, key: VLineKey, byte_idx: usize) -> VLineKey {
+    fn split_line(&mut self, key: VLineKey, byte_idx: usize, continuation: bool) -> VLineKey {
         let line = &self.arena[key];
         let split_byte = line.start_byte + byte_idx;
         let next = line.next;
@@ -199,7 +175,7 @@ impl VLines {
             buffer_key: line.buffer_key,
             start_byte: split_byte,
             end_byte: line.end_byte,
-            continuation: true,
+            continuation,
         };
         debug_assert!(new_line.start_byte != new_line.end_byte);
         let new_key = self.arena.insert(new_line);
@@ -319,6 +295,7 @@ impl<'a, 'b, 'r> Iterator for SliceIterator<'a, 'b, 'r> {
         Some(DisplayLine {
             slice: line.slice(&self.ropes),
             indent: &HSPACES[..indent],
+            continuation: line.continuation,
         })
     }
 }
