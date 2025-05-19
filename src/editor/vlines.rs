@@ -66,14 +66,12 @@ impl VLines {
         instance
     }
 
-    // TODO first line should wrap at wrap_at but next lines should probably add indent to that
-    // number
     fn wrap(&mut self, ropes: &RopeMap, mut key: VLineKey, wrap_at: usize) -> VLineKey {
         loop {
             let line = &self.arena[key];
             let slice = line.slice(ropes);
             let len_chars = slice.len_chars();
-            if len_chars <= wrap_at {
+            if len_chars <= wrap_at + 1 {
                 let newline_idx = slice
                     .chars()
                     .enumerate()
@@ -287,13 +285,19 @@ impl<'a, 'b, 'r> Iterator for SliceIterator<'a, 'b, 'r> {
         }
         let line = self.arena.get(self.index)?;
         self.index = line.next;
-        let indent = if line.continuation {
-            0
-        } else {
-            self.buffers[line.buffer_key].indent - self.dedent
-        };
+        let indent = self.buffers[line.buffer_key].indent - self.dedent;
+        let slice = line.slice(&self.ropes);
+        debug_assert!(
+            slice
+                .chars_at(slice.len_chars())
+                .reversed()
+                .skip(1)
+                .all(|c| c != '\n'),
+            "newline in DisplayLine: {:?}",
+            slice
+        );
         Some(DisplayLine {
-            slice: line.slice(&self.ropes),
+            slice,
             indent: &HSPACES[..indent],
             continuation: line.continuation,
         })

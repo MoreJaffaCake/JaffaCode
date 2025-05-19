@@ -137,6 +137,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     code: KeyCode::Char('w'),
                     modifiers: KeyModifiers::CONTROL,
                     ..
+                })
+                | Event::Key(KeyEvent {
+                    code: KeyCode::Tab, ..
                 }) => {
                     active_editor += 1;
                     active_editor %= editors.len();

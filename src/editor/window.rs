@@ -10,18 +10,19 @@ pub struct Window {
     #[debug(skip)]
     pub cursor: VLineKey,
     pub cursor_idx: usize,
-    pub position: Option<Position>,
+    position: Option<Position>,
     pub cur_y: u16,
     pub cur_x: u16,
     pub indent: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Position {
-    pub char_idx: usize,
-    pub trailing_spaces: usize,
-    pub newlines: usize,
-    pub relative_x: usize,
+struct Position {
+    char_idx: usize,
+    trailing_spaces: usize,
+    newlines: usize,
+    relative_x: usize,
+    invalid: bool,
 }
 
 impl Window {
@@ -112,7 +113,12 @@ impl Window {
     fn get_position(&self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) -> Position {
         let line = &vlines[self.cursor];
         let indent = buffers[line.buffer_key].indent;
-        let relative_x = self.cur_x as usize + self.indent - indent;
+        let mut invalid = false;
+        let relative_x = self.cur_x as usize + self.indent;
+        let relative_x = relative_x.checked_sub(indent).unwrap_or_else(|| {
+            invalid = true;
+            0
+        });
         let rope = &ropes[line.buffer_key];
         let mut char_idx = rope.byte_to_char(line.start_byte);
         let newlines = (self.start_idx + self.cur_y as usize).saturating_sub(self.cursor_idx);
@@ -134,6 +140,7 @@ impl Window {
             char_idx,
             newlines,
             relative_x,
+            invalid,
         }
     }
 
@@ -242,11 +249,12 @@ impl Window {
         let Position {
             trailing_spaces,
             mut char_idx,
+            invalid,
             ..
         } = self.position(vlines, ropes, buffers);
         let line = &vlines[self.cursor];
         let buffer = &buffers[line.buffer_key];
-        if char_idx >= ropes[line.buffer_key].len_chars() {
+        if char_idx >= ropes[line.buffer_key].len_chars() || invalid {
             return;
         }
         if trailing_spaces > 0 {
@@ -276,9 +284,13 @@ impl Window {
             trailing_spaces,
             mut char_idx,
             newlines,
-            relative_x,
+            mut relative_x,
+            invalid,
             ..
         } = self.position(vlines, ropes, buffers);
+        if invalid {
+            return;
+        }
         let line = &vlines[self.cursor];
         let buffer = &buffers[line.buffer_key];
         if newlines > 0 {
@@ -296,20 +308,26 @@ impl Window {
             char_idx += trailing_spaces;
         }
         buffer.insert_char(vlines, ropes, char_idx, c, self.cursor);
-        self.position_as_mut().char_idx += 1;
-        if c == '\n' || relative_x + 1 >= buffer.wrap_at {
+        char_idx += 1;
+        if c == '\n' {
             self.move_cursor_next(vlines);
             self.cur_y += 1;
             self.cur_x = (buffer.indent - self.indent) as _;
-            self.clear_position();
+            relative_x = 1;
+        } else if relative_x + 1 > buffer.wrap_at {
+            self.move_cursor_next(vlines);
+            self.cur_y += 1;
+            self.cur_x = (buffer.indent + 1 - self.indent) as _;
+            relative_x = 1;
         } else {
             self.cur_x += 1;
-            let pos = self.position_as_mut();
-            pos.char_idx = char_idx + 1;
-            pos.trailing_spaces = 0;
-            pos.newlines = 0;
-            pos.relative_x += 1;
+            relative_x += 1;
         }
+        let pos = self.position_as_mut();
+        pos.char_idx = char_idx;
+        pos.trailing_spaces = 0;
+        pos.newlines = 0;
+        pos.relative_x = relative_x;
     }
 
     pub fn delete_char_backward(
@@ -323,10 +341,11 @@ impl Window {
             trailing_spaces,
             newlines,
             relative_x,
+            invalid,
         } = self.position(vlines, ropes, buffers);
         let line = &vlines[self.cursor];
         let buffer = &buffers[line.buffer_key];
-        if char_idx == 0 {
+        if char_idx == 0 || invalid {
             return;
         } else if relative_x > 0 {
             self.cur_x -= 1;
@@ -341,13 +360,13 @@ impl Window {
                 buffer.remove(vlines, ropes, char_idx, self.cursor);
                 let position = self.position_as_mut();
                 position.char_idx = char_idx;
-                position.relative_x = line_len;
+                position.relative_x = line_len - buffer.indent;
             } else {
                 self.position_as_mut().newlines -= 1;
                 if newlines == 1 {
                     let line_len = self.line_len(vlines, ropes, buffers);
                     self.cur_x = line_len as u16;
-                    self.position_as_mut().relative_x = line_len;
+                    self.position_as_mut().relative_x = line_len - buffer.indent;
                 }
             }
             return;
@@ -356,7 +375,7 @@ impl Window {
             self.move_cursor_prev(vlines);
             let line_len = self.line_len(vlines, ropes, buffers);
             self.cur_x = line_len as u16;
-            self.position_as_mut().relative_x = line_len;
+            self.position_as_mut().relative_x = line_len - buffer.indent;
         }
         if trailing_spaces == 0 {
             let rope = self.cursor_rope_mut(vlines, ropes);
