@@ -29,14 +29,6 @@ impl Buffer {
         }
     }
 
-    pub fn line_len(vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap, key: VLineKey) -> usize {
-        let line = &vlines[key];
-        let line_len = line.slice(ropes).len_chars().saturating_sub(1);
-        let buffer = &buffers[line.buffer_key];
-        let indent = buffer.indent;
-        line_len + indent
-    }
-
     #[inline]
     pub fn insert(
         &self,

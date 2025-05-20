@@ -82,6 +82,10 @@ impl VLines {
                     let byte_idx = slice.char_to_byte(newline_idx + 1);
                     key = self.split_line(key, byte_idx, false);
                 } else if self.arena.contains_key(line.next) {
+                    debug_assert!(
+                        self.arena[line.next].buffer_key == line.buffer_key,
+                        "missing newline at the end of a buffer"
+                    );
                     self.merge_next(key);
                 } else {
                     unreachable!("missing newline at EOF");

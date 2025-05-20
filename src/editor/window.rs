@@ -123,7 +123,7 @@ impl Window {
         let mut char_idx = rope.byte_to_char(line.start_byte);
         let newlines = (self.start_idx + self.cur_y as usize).saturating_sub(self.cursor_idx);
         let trailing_spaces: usize;
-        let len_chars = self.line_len(vlines, ropes, buffers);
+        let len_chars = line.slice(ropes).len_chars().saturating_sub(1);
         if newlines > 0 {
             char_idx = rope.byte_to_char(line.end_byte);
             trailing_spaces = relative_x as usize;
@@ -132,7 +132,7 @@ impl Window {
             trailing_spaces = 0;
         } else {
             char_idx += len_chars;
-            trailing_spaces = relative_x as usize - len_chars;
+            trailing_spaces = relative_x - len_chars;
         }
         Position {
             trailing_spaces,
@@ -191,7 +191,10 @@ impl Window {
             } else {
                 return;
             }
-            self.cur_x = Buffer::line_len(vlines, ropes, buffers, self.cursor) as _;
+            self.cur_x = vlines[self.cursor]
+                .slice(ropes)
+                .len_chars()
+                .saturating_sub(1) as _;
         }
         self.clear_position();
     }
