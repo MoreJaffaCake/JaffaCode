@@ -111,7 +111,13 @@ impl VLines {
         }
     }
 
-    pub fn insert(&mut self, ropes: &RopeMap, at: VLineKey, bytes: usize, wrap_at: usize) {
+    pub fn insert(
+        &mut self,
+        ropes: &RopeMap,
+        at: VLineKey,
+        bytes: usize,
+        wrap_at: usize,
+    ) -> VLineKey {
         let mut key = at;
         let buffer_key;
         {
@@ -128,7 +134,7 @@ impl VLines {
             line.end_byte += bytes;
             key = line.next;
         }
-        self.wrap(ropes, at, wrap_at);
+        self.wrap(ropes, at, wrap_at)
     }
 
     pub fn remove(&mut self, ropes: &RopeMap, at: VLineKey, bytes: usize, wrap_at: usize) {

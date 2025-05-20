@@ -45,9 +45,9 @@ impl Buffer {
         char_idx: usize,
         text: &str,
         vline_key: VLineKey,
-    ) {
+    ) -> VLineKey {
         ropes[self.buffer_key].insert(char_idx, text);
-        vlines.insert(ropes, vline_key, text.len(), self.wrap_at);
+        vlines.insert(ropes, vline_key, text.len(), self.wrap_at)
     }
 
     #[inline]
