@@ -299,6 +299,7 @@ impl Window {
         ropes: &mut RopeMap,
         buffers: &BufferMap,
         c: char,
+        limit: u16,
     ) {
         let Position {
             trailing_spaces,
@@ -328,17 +329,24 @@ impl Window {
             );
             char_idx += trailing_spaces;
         }
-        // TODO inserting beyond the visible lines should scroll down
         buffer.insert_char(vlines, ropes, char_idx, c, self.cursor);
         char_idx += 1;
         if c == '\n' {
-            self.move_cursor_next(vlines);
-            self.cur_y += 1;
+            if self.cur_y < limit {
+                self.move_cursor_next(vlines);
+                self.cur_y += 1;
+            } else {
+                self.scroll_down(vlines);
+            }
             self.cur_x = (buffer.indent - self.indent) as _;
             relative_x = 0;
         } else if relative_x + 1 > buffer.wrap_at {
-            self.move_cursor_next(vlines);
-            self.cur_y += 1;
+            if self.cur_y < limit {
+                self.move_cursor_next(vlines);
+                self.cur_y += 1;
+            } else {
+                self.scroll_down(vlines);
+            }
             self.cur_x = (buffer.indent + 1 - self.indent) as _;
             relative_x = 1;
         } else {

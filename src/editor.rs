@@ -67,8 +67,13 @@ impl Editor {
 
     #[inline]
     pub fn insert_char(&mut self, c: char) {
-        self.window
-            .insert_char(&mut self.vlines, &mut self.ropes, &self.buffers, c)
+        self.window.insert_char(
+            &mut self.vlines,
+            &mut self.ropes,
+            &self.buffers,
+            c,
+            self.pane_height - 1,
+        )
     }
 
     #[inline]
