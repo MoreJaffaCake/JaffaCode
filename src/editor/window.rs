@@ -328,6 +328,7 @@ impl Window {
             );
             char_idx += trailing_spaces;
         }
+        // TODO inserting beyond the visible lines should scroll down
         buffer.insert_char(vlines, ropes, char_idx, c, self.cursor);
         char_idx += 1;
         if c == '\n' {
@@ -400,7 +401,6 @@ impl Window {
             return;
         } else {
             self.scroll_up(vlines);
-            self.move_cursor_prev(vlines);
             let line = &vlines[self.cursor];
             let len_chars = line.slice(ropes).len_chars().saturating_sub(1);
             self.cur_x = (len_chars + buffer.indent - self.indent) as u16;
