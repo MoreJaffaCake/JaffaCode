@@ -3,17 +3,17 @@ use super::*;
 #[derive(derive_more::Debug)]
 pub struct Window {
     #[debug(skip)]
-    pub start: VLineKey,
-    pub start_idx: usize,
+    start: VLineKey,
+    start_idx: usize,
     #[debug(skip)]
-    pub end: VLineKey,
+    end: VLineKey,
     #[debug(skip)]
-    pub cursor: VLineKey,
-    pub cursor_idx: usize,
+    cursor: VLineKey,
+    cursor_idx: usize,
     position: Option<Position>,
-    pub cur_y: u16,
-    pub cur_x: u16,
-    pub indent: usize,
+    cur_y: u16,
+    cur_x: u16,
+    indent: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -40,8 +40,19 @@ impl Window {
         }
     }
 
-    pub fn cursor_rope_mut<'r>(&self, vlines: &VLines, ropes: &'r mut RopeMap) -> &'r mut Rope {
-        &mut ropes[vlines[self.cursor].buffer_key]
+    #[inline]
+    pub fn get_display_lines<'r>(
+        &self,
+        vlines: &VLines,
+        ropes: &'r RopeMap,
+        buffers: &BufferMap,
+    ) -> impl Iterator<Item = DisplayLine<'r>> {
+        vlines.slices(ropes, buffers, self.start, self.end, self.indent)
+    }
+
+    #[inline(always)]
+    pub fn cursor(&self) -> VLineKey {
+        self.cursor
     }
 
     pub fn scroll_up(&mut self, vlines: &VLines) -> bool {
@@ -70,7 +81,7 @@ impl Window {
         }
     }
 
-    pub fn move_cursor_prev(&mut self, vlines: &VLines) -> bool {
+    fn move_cursor_prev(&mut self, vlines: &VLines) -> bool {
         let prev = vlines[self.cursor].prev;
         if self.cursor_idx > 0 && vlines.contains_key(prev) {
             self.cursor = prev;
@@ -81,7 +92,7 @@ impl Window {
         }
     }
 
-    pub fn move_cursor_next(&mut self, vlines: &VLines) -> bool {
+    fn move_cursor_next(&mut self, vlines: &VLines) -> bool {
         let next = vlines[self.cursor].next;
         if next != self.end && vlines.contains_key(next) {
             self.cursor = next;
@@ -173,13 +184,17 @@ impl Window {
         self.clear_position();
     }
 
-    pub fn move_cursor_down(&mut self, vlines: &VLines) {
-        self.cur_y += 1;
-        self.move_cursor_next(vlines);
-        self.clear_position();
+    pub fn move_cursor_down(&mut self, vlines: &VLines, limit: u16) {
+        if self.cur_y < limit {
+            self.cur_y += 1;
+            self.move_cursor_next(vlines);
+            self.clear_position();
+        } else {
+            self.scroll_down(vlines);
+        }
     }
 
-    pub fn move_cursor_left(&mut self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) {
+    pub fn move_cursor_left(&mut self, vlines: &VLines, ropes: &RopeMap) {
         if self.cur_x > 0 {
             self.cur_x -= 1;
         } else {
@@ -381,7 +396,7 @@ impl Window {
             self.position_as_mut().relative_x = line_len - buffer.indent;
         }
         if trailing_spaces == 0 {
-            let rope = self.cursor_rope_mut(vlines, ropes);
+            let rope = &ropes[vlines[self.cursor].buffer_key];
             if char_idx == rope.len_chars() {
                 char_idx -= 1;
             }

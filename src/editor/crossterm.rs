@@ -70,14 +70,14 @@ impl Editor {
                 modifiers: KeyModifiers::SHIFT,
                 ..
             }) => {
-                self.scroll_up(1);
+                self.scroll_up();
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Down,
                 modifiers: KeyModifiers::SHIFT,
                 ..
             }) => {
-                self.scroll_down(1);
+                self.scroll_down();
             }
             Event::Key(KeyEvent {
                 code: KeyCode::PageUp,

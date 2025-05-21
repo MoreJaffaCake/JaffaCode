@@ -101,17 +101,19 @@ impl VLines {
     #[inline(always)]
     pub fn slices<'r, 'b>(
         &self,
-        window: &Window,
         ropes: &'r RopeMap,
         buffers: &'b BufferMap,
+        index: VLineKey,
+        end: VLineKey,
+        dedent: usize,
     ) -> SliceIterator<'_, 'b, 'r> {
         SliceIterator {
             arena: &self.arena,
             ropes,
             buffers,
-            index: window.start,
-            end: window.end,
-            dedent: window.indent,
+            index,
+            end,
+            dedent,
         }
     }
 
@@ -206,7 +208,7 @@ impl VLines {
         self.last
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn contains_key(&self, key: VLineKey) -> bool {
         self.arena.contains_key(key)
     }
