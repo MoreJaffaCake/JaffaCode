@@ -231,7 +231,7 @@ impl Editor {
     }
 }
 
-#[derive(derive_more::Debug)]
+#[derive(derive_more::Debug, Clone)]
 pub struct DisplayLine<'r> {
     pub slice: RopeSlice<'r>,
     pub indent: &'static str,

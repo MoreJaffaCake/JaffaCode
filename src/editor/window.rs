@@ -14,6 +14,7 @@ pub struct Window {
     cur_y: u16,
     cur_x: u16,
     indent: usize,
+    prepend_newlines: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -37,6 +38,7 @@ impl Window {
             cur_y: 0,
             cur_x: 0,
             indent: buffers[vlines[start].buffer_key].indent,
+            prepend_newlines: 0,
         }
     }
 
@@ -47,7 +49,14 @@ impl Window {
         ropes: &'r RopeMap,
         buffers: &BufferMap,
     ) -> impl Iterator<Item = DisplayLine<'r>> {
-        vlines.slices(ropes, buffers, self.start, self.end, self.indent)
+        DisplayLineIter {
+            ropes,
+            buffers,
+            vlines_iter: vlines.slices(self.start, self.end),
+            dedent: self.indent,
+            prepend_newlines: self.prepend_newlines,
+            empty_slice: ropes[vlines[self.start].buffer_key].slice(0..0),
+        }
     }
 
     #[inline(always)]
@@ -57,7 +66,11 @@ impl Window {
 
     pub fn scroll_up(&mut self, vlines: &VLines) -> bool {
         let prev = vlines[self.start].prev;
-        if self.start_idx > 0 && vlines.contains_key(prev) {
+        if self.start_idx == 0 {
+            self.prepend_newlines += 1;
+            self.clear_position();
+            true
+        } else if vlines.contains_key(prev) {
             self.start = prev;
             self.start_idx -= 1;
             self.move_cursor_prev(vlines);
@@ -70,7 +83,12 @@ impl Window {
 
     pub fn scroll_down(&mut self, vlines: &VLines) -> bool {
         let next = vlines[self.start].next;
-        if next != self.end && vlines.contains_key(next) {
+        if self.prepend_newlines > 0 {
+            self.prepend_newlines -= 1;
+            self.cur_y += 1;
+            self.clear_position();
+            true
+        } else if next != self.end && vlines.contains_key(next) {
             self.start = next;
             self.start_idx += 1;
             self.move_cursor_next(vlines);
@@ -108,11 +126,17 @@ impl Window {
         if self.position.is_none() {
             self.position = Some(self.get_position(vlines, ropes, buffers));
         }
-        debug_assert!({
+        #[cfg(debug_assertions)]
+        {
             let p = self.position.unwrap();
-            dbg!(p);
-            (p.relative_x > 0 && self.cur_x > 0) || p.relative_x == 0
-        });
+            if p.relative_x > 0 {
+                debug_assert!(self.cur_x > 0);
+            }
+            debug_assert!(
+                !(p.newlines > 0 && self.prepend_newlines > 0)
+                    || (self.prepend_newlines == 0 && p.newlines == 0)
+            );
+        }
         self.position.unwrap()
     }
 
@@ -140,10 +164,13 @@ impl Window {
         });
         let rope = &ropes[line.buffer_key];
         let mut char_idx = rope.byte_to_char(line.start_byte);
-        let newlines = (self.start_idx + self.cur_y as usize).saturating_sub(self.cursor_idx);
+        let mut newlines = (self.start_idx + self.cur_y as usize).saturating_sub(self.cursor_idx);
         let trailing_spaces: usize;
         let len_chars = line.slice(ropes).len_chars().saturating_sub(1);
-        if newlines > 0 {
+        if self.prepend_newlines > 0 {
+            trailing_spaces = relative_x as usize;
+            newlines = 0;
+        } else if newlines > 0 {
             char_idx = rope.byte_to_char(line.end_byte);
             trailing_spaces = relative_x as usize;
         } else if len_chars >= relative_x as usize {
@@ -178,14 +205,15 @@ impl Window {
                 self.move_cursor_prev(vlines);
             }
         } else {
-            // TODO scrolling even before the file so we can add text there?
             self.scroll_up(vlines);
         }
         self.clear_position();
     }
 
     pub fn move_cursor_down(&mut self, vlines: &VLines, limit: u16) {
-        if self.cur_y < limit {
+        if self.prepend_newlines > 0 {
+            self.prepend_newlines -= 1;
+        } else if self.cur_y < limit {
             self.cur_y += 1;
             self.move_cursor_next(vlines);
             self.clear_position();
@@ -276,6 +304,17 @@ impl Window {
         if char_idx >= ropes[line.buffer_key].len_chars() || invalid {
             return;
         }
+        if self.prepend_newlines > 0 {
+            debug_assert!(char_idx == 0);
+            buffer.insert(
+                vlines,
+                ropes,
+                char_idx,
+                &VSPACES[..self.prepend_newlines],
+                self.cursor,
+            );
+            self.prepend_newlines = 0;
+        }
         if trailing_spaces > 0 {
             buffer.insert(
                 vlines,
@@ -314,7 +353,16 @@ impl Window {
         }
         let line = &vlines[self.cursor];
         let buffer = &buffers[line.buffer_key];
-        if newlines > 0 {
+        if self.prepend_newlines > 0 {
+            buffer.insert(
+                vlines,
+                ropes,
+                char_idx,
+                &VSPACES[..self.prepend_newlines],
+                self.cursor,
+            );
+            self.prepend_newlines = 0;
+        } else if newlines > 0 {
             self.cursor = buffer.insert(vlines, ropes, char_idx, &VSPACES[..newlines], self.cursor);
             char_idx += newlines - 1;
             self.cursor_idx += newlines;
@@ -376,7 +424,7 @@ impl Window {
         } = self.position(vlines, ropes, buffers);
         let line = &vlines[self.cursor];
         let buffer = &buffers[line.buffer_key];
-        if char_idx == 0 || invalid {
+        if invalid {
             return;
         } else if relative_x > 0 {
             self.cur_x -= 1;
@@ -420,5 +468,51 @@ impl Window {
         } else {
             self.with_position(|p| p.trailing_spaces -= 1);
         }
+    }
+}
+
+#[derive(derive_more::Debug)]
+pub struct DisplayLineIter<'v, 'r, 'b> {
+    #[debug(skip)]
+    ropes: &'r RopeMap,
+    #[debug(skip)]
+    buffers: &'b BufferMap,
+    #[debug(skip)]
+    vlines_iter: VLineIter<'v>,
+    dedent: usize,
+    prepend_newlines: usize,
+    #[debug(skip)]
+    empty_slice: RopeSlice<'r>,
+}
+
+impl<'v, 'r, 'b> Iterator for DisplayLineIter<'v, 'r, 'b> {
+    type Item = DisplayLine<'r>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.prepend_newlines > 0 {
+            self.prepend_newlines -= 1;
+            return Some(DisplayLine {
+                slice: self.empty_slice.clone(),
+                indent: &"",
+                continuation: false,
+            });
+        }
+        let line = self.vlines_iter.next()?;
+        let indent = self.buffers[line.buffer_key].indent - self.dedent;
+        let slice = line.slice(&self.ropes);
+        debug_assert!(
+            slice
+                .chars_at(slice.len_chars())
+                .reversed()
+                .skip(1)
+                .all(|c| c != '\n'),
+            "newline in DisplayLine: {:?}",
+            slice
+        );
+        Some(DisplayLine {
+            slice,
+            indent: &HSPACES[..indent],
+            continuation: line.continuation,
+        })
     }
 }

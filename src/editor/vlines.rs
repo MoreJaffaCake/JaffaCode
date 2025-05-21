@@ -99,21 +99,11 @@ impl VLines {
     }
 
     #[inline(always)]
-    pub fn slices<'r, 'b>(
-        &self,
-        ropes: &'r RopeMap,
-        buffers: &'b BufferMap,
-        index: VLineKey,
-        end: VLineKey,
-        dedent: usize,
-    ) -> SliceIterator<'_, 'b, 'r> {
-        SliceIterator {
+    pub fn slices(&self, index: VLineKey, end: VLineKey) -> VLineIter {
+        VLineIter {
             arena: &self.arena,
-            ropes,
-            buffers,
             index,
             end,
-            dedent,
         }
     }
 
@@ -274,22 +264,17 @@ impl VLine {
 }
 
 #[derive(derive_more::Debug)]
-pub struct SliceIterator<'a, 'b, 'r> {
+pub struct VLineIter<'v> {
     #[debug(skip)]
-    arena: &'a SlotMap<VLineKey, VLine>,
-    #[debug(skip)]
-    buffers: &'b BufferMap,
-    #[debug(skip)]
-    ropes: &'r RopeMap,
+    arena: &'v SlotMap<VLineKey, VLine>,
     #[debug(skip)]
     index: VLineKey,
     #[debug(skip)]
     end: VLineKey,
-    dedent: usize,
 }
 
-impl<'a, 'b, 'r> Iterator for SliceIterator<'a, 'b, 'r> {
-    type Item = DisplayLine<'r>;
+impl<'v> Iterator for VLineIter<'v> {
+    type Item = &'v VLine;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index == self.end {
@@ -297,21 +282,6 @@ impl<'a, 'b, 'r> Iterator for SliceIterator<'a, 'b, 'r> {
         }
         let line = self.arena.get(self.index)?;
         self.index = line.next;
-        let indent = self.buffers[line.buffer_key].indent - self.dedent;
-        let slice = line.slice(&self.ropes);
-        debug_assert!(
-            slice
-                .chars_at(slice.len_chars())
-                .reversed()
-                .skip(1)
-                .all(|c| c != '\n'),
-            "newline in DisplayLine: {:?}",
-            slice
-        );
-        Some(DisplayLine {
-            slice,
-            indent: &HSPACES[..indent],
-            continuation: line.continuation,
-        })
+        Some(line)
     }
 }
