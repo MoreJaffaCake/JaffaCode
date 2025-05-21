@@ -385,17 +385,17 @@ impl Window {
                     p.char_idx = char_idx;
                     p.relative_x = len_chars;
                 });
+            } else if newlines == 1 {
+                let line = &vlines[self.cursor];
+                let len_chars = line.slice(ropes).len_chars().saturating_sub(1);
+                self.cur_x = (len_chars + buffer.indent - self.indent) as u16;
+                self.with_position(|p| {
+                    p.char_idx = char_idx;
+                    p.relative_x = len_chars;
+                    p.newlines = 0;
+                });
             } else {
                 self.with_position(|p| p.newlines -= 1);
-                if newlines == 1 {
-                    let line = &vlines[self.cursor];
-                    let len_chars = line.slice(ropes).len_chars().saturating_sub(1);
-                    self.cur_x = (len_chars + buffer.indent - self.indent) as u16;
-                    self.with_position(|p| {
-                        p.char_idx = char_idx;
-                        p.relative_x = len_chars;
-                    });
-                }
             }
             return;
         } else {
