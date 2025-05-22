@@ -260,8 +260,7 @@ impl Window {
     }
 
     pub fn move_cursor_at_start(&mut self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) {
-        // NOTE: seems a bit expensive but it's not a key you repeat so, okay?
-        if self.position(vlines, ropes, buffers).newlines == 0 && self.prepend_newlines == 0 {
+        if self.cur_y as usize + self.start_idx <= self.cursor_idx && self.prepend_newlines == 0 {
             self.cur_x = self
                 .slice(vlines, ropes)
                 .chars()
@@ -277,8 +276,7 @@ impl Window {
     }
 
     pub fn move_cursor_at_end(&mut self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) {
-        // NOTE: seems a bit expensive but it's not a key you repeat so, okay?
-        if self.position(vlines, ropes, buffers).newlines == 0 && self.prepend_newlines == 0 {
+        if self.cur_y as usize + self.start_idx <= self.cursor_idx && self.prepend_newlines == 0 {
             let slice = self.slice(vlines, ropes);
             let len_chars = slice.len_chars();
             self.cur_x = slice
