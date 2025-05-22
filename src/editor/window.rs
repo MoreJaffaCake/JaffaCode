@@ -260,30 +260,39 @@ impl Window {
     }
 
     pub fn move_cursor_at_start(&mut self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) {
-        self.cur_x = self
-            .slice(vlines, ropes)
-            .chars()
-            .enumerate()
-            .find_map(|(i, c)| (!c.is_whitespace()).then_some(i as u16))
-            .unwrap_or(0);
-        // TODO cursor might be outside the text
-        let buffer = &buffers[vlines[self.cursor].buffer_key];
-        self.cur_x += buffer.indent.saturating_sub(self.indent) as u16;
+        // NOTE: seems a bit expensive but it's not a key you repeat so, okay?
+        if self.position(vlines, ropes, buffers).newlines == 0 && self.prepend_newlines == 0 {
+            self.cur_x = self
+                .slice(vlines, ropes)
+                .chars()
+                .enumerate()
+                .find_map(|(i, c)| (!c.is_whitespace()).then_some(i as u16))
+                .unwrap_or(0);
+            let buffer = &buffers[vlines[self.cursor].buffer_key];
+            self.cur_x += buffer.indent.saturating_sub(self.indent) as u16;
+        } else {
+            self.cur_x = 0;
+        }
         self.clear_position();
     }
 
     pub fn move_cursor_at_end(&mut self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) {
-        let slice = self.slice(vlines, ropes);
-        let len_chars = slice.len_chars();
-        self.cur_x = slice
-            .chars_at(len_chars)
-            .reversed()
-            .enumerate()
-            .find_map(|(i, c)| (!c.is_whitespace()).then_some((len_chars - i) as u16))
-            .unwrap_or(0);
-        // TODO cursor might be outside the text
-        let buffer = &buffers[vlines[self.cursor].buffer_key];
-        self.cur_x += buffer.indent.saturating_sub(self.indent) as u16;
+        // NOTE: seems a bit expensive but it's not a key you repeat so, okay?
+        if self.position(vlines, ropes, buffers).newlines == 0 && self.prepend_newlines == 0 {
+            let slice = self.slice(vlines, ropes);
+            let len_chars = slice.len_chars();
+            self.cur_x = slice
+                .chars_at(len_chars)
+                .reversed()
+                .enumerate()
+                .find_map(|(i, c)| (!c.is_whitespace()).then_some((len_chars - i) as u16))
+                .unwrap_or(0);
+            // TODO cursor might be outside the text
+            let buffer = &buffers[vlines[self.cursor].buffer_key];
+            self.cur_x += buffer.indent.saturating_sub(self.indent) as u16;
+        } else {
+            self.cur_x = 0;
+        }
         self.clear_position();
     }
 
