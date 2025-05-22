@@ -34,6 +34,13 @@ pub struct Editor {
     pane_height: u16,
 }
 
+#[derive(derive_more::Debug, Clone)]
+pub struct DisplayLine<'r> {
+    pub slice: RopeSlice<'r>,
+    pub indent: &'static str,
+    pub continuation: bool,
+}
+
 impl Editor {
     pub fn new(initial_text: &str) -> Self {
         let mut rope = Rope::from_str(initial_text);
@@ -164,8 +171,7 @@ impl Editor {
         }
     }
 
-    pub fn split_buffer(&mut self) {
-        let mut start = self.window.cursor();
+    fn split_buffer(&mut self, mut start: VLineKey) {
         let mut line = &self.vlines[start];
         loop {
             if !line.continuation {
@@ -193,6 +199,7 @@ impl Editor {
         if wrap_at <= MIN_WRAP_AT {
             wrap_at = buffer.wrap_at;
         }
+        // TODO does not dedent the buffer on the top... should we?
         if indent != buffer.indent {
             new_rope = new_rope
                 .lines()
@@ -208,9 +215,50 @@ impl Editor {
         }
         let new_rope_key = self.ropes.insert(new_rope);
         dbg!(indent, wrap_at);
-        let new_buffer = Buffer::new(new_rope_key, start, end, wrap_at, indent);
+        let new_buffer = Buffer::new(new_rope_key, start, end, wrap_at, indent + buffer.indent);
         self.buffers.insert(new_rope_key, new_buffer);
         self.vlines.update_rope(start, new_rope_key, indent);
+    }
+
+    pub fn create_block(&mut self) {
+        let start = self.window.cursor();
+        let line = &self.vlines[start];
+        let indent = line
+            .slice(&self.ropes)
+            .chars()
+            .take_while(|c| *c == ' ')
+            .count();
+        if indent == 0 {
+            return;
+        }
+        let indent = line.slice(&self.ropes).slice(..indent);
+        let buffer = &self.buffers[line.buffer_key];
+        let mut it = self.vlines.iter(start, buffer.start..buffer.end);
+        let Some((end_key, end_line)) = it.clone().find(|(_, line)| {
+            let slice = line.slice(&self.ropes);
+            slice.len_chars() > 0
+                && (slice.len_chars() < indent.len_chars()
+                    || slice.slice(..indent.len_chars()) != indent)
+        }) else {
+            return;
+        };
+        if !end_line.slice(&self.ropes).chars().any(|c| c == '}') {
+            return;
+        }
+        let Some((_, start_line)) = it.reversed().find(|(_, line)| {
+            let slice = line.slice(&self.ropes);
+            slice.len_chars() > 0
+                && (slice.len_chars() < indent.len_chars()
+                    || slice.slice(..indent.len_chars()) != indent)
+        }) else {
+            return;
+        };
+        if !start_line.slice(&self.ropes).chars().any(|c| c == '{') {
+            return;
+        }
+        let start_key = start_line.next;
+        self.split_buffer(end_key);
+        self.split_buffer(start_key);
     }
 
     pub fn create_window(&mut self) {
@@ -229,11 +277,4 @@ impl Editor {
         self.pane_width = width;
         self.pane_height = height;
     }
-}
-
-#[derive(derive_more::Debug, Clone)]
-pub struct DisplayLine<'r> {
-    pub slice: RopeSlice<'r>,
-    pub indent: &'static str,
-    pub continuation: bool,
 }

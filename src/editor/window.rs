@@ -52,7 +52,7 @@ impl Window {
         DisplayLineIter {
             ropes,
             buffers,
-            vlines_iter: vlines.slices(self.start, self.end),
+            vlines_iter: vlines.iter(self.start, ..self.end),
             dedent: self.indent,
             prepend_newlines: self.prepend_newlines,
             empty_slice: ropes[vlines[self.start].buffer_key].slice(0..0),
@@ -479,20 +479,26 @@ impl Window {
 }
 
 #[derive(derive_more::Debug)]
-pub struct DisplayLineIter<'v, 'r, 'b> {
+pub struct DisplayLineIter<'v, 'r, 'b, R>
+where
+    R: std::ops::RangeBounds<VLineKey>,
+{
     #[debug(skip)]
     ropes: &'r RopeMap,
     #[debug(skip)]
     buffers: &'b BufferMap,
     #[debug(skip)]
-    vlines_iter: VLineIter<'v>,
+    vlines_iter: VLineIter<'v, R>,
     dedent: usize,
     prepend_newlines: usize,
     #[debug(skip)]
     empty_slice: RopeSlice<'r>,
 }
 
-impl<'v, 'r, 'b> Iterator for DisplayLineIter<'v, 'r, 'b> {
+impl<'v, 'r, 'b, R> Iterator for DisplayLineIter<'v, 'r, 'b, R>
+where
+    R: std::ops::RangeBounds<VLineKey>,
+{
     type Item = DisplayLine<'r>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -504,7 +510,7 @@ impl<'v, 'r, 'b> Iterator for DisplayLineIter<'v, 'r, 'b> {
                 continuation: false,
             });
         }
-        let line = self.vlines_iter.next()?;
+        let (_, line) = self.vlines_iter.next()?;
         let indent = self.buffers[line.buffer_key].indent - self.dedent;
         let slice = line.slice(&self.ropes);
         debug_assert!(

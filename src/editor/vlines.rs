@@ -99,11 +99,15 @@ impl VLines {
     }
 
     #[inline(always)]
-    pub fn slices(&self, index: VLineKey, end: VLineKey) -> VLineIter {
+    pub fn iter<R>(&self, index: VLineKey, range: R) -> VLineIter<R>
+    where
+        R: std::ops::RangeBounds<VLineKey>,
+    {
         VLineIter {
             arena: &self.arena,
             index,
-            end,
+            range,
+            reversed: false,
         }
     }
 
@@ -263,25 +267,58 @@ impl VLine {
     }
 }
 
-#[derive(derive_more::Debug)]
-pub struct VLineIter<'v> {
+#[derive(derive_more::Debug, Clone)]
+pub struct VLineIter<'v, R> {
     #[debug(skip)]
     arena: &'v SlotMap<VLineKey, VLine>,
     #[debug(skip)]
     index: VLineKey,
     #[debug(skip)]
-    end: VLineKey,
+    range: R,
+    reversed: bool,
 }
 
-impl<'v> Iterator for VLineIter<'v> {
-    type Item = &'v VLine;
+impl<'v, R> Iterator for VLineIter<'v, R>
+where
+    R: std::ops::RangeBounds<VLineKey>,
+{
+    type Item = (VLineKey, &'v VLine);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index == self.end {
+        if !self.range.contains(&self.index) {
             return None;
         }
-        let line = self.arena.get(self.index)?;
-        self.index = line.next;
-        Some(line)
+        let key = self.index;
+        let line = self.arena.get(key)?;
+        if self.reversed {
+            self.index = line.prev;
+        } else {
+            self.index = line.next;
+        }
+        Some((key, line))
+    }
+}
+
+impl<'v, R> VLineIter<'v, R>
+where
+    R: std::ops::RangeBounds<VLineKey>,
+{
+    pub fn prev(&mut self) -> Option<<Self as Iterator>::Item> {
+        if !self.range.contains(&self.index) {
+            return None;
+        }
+        let key = self.index;
+        let line = self.arena.get(key)?;
+        if self.reversed {
+            self.index = line.next;
+        } else {
+            self.index = line.prev;
+        }
+        Some((key, line))
+    }
+
+    pub fn reversed(&mut self) -> &mut Self {
+        self.reversed = true;
+        self
     }
 }

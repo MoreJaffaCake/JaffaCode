@@ -110,7 +110,7 @@ impl Editor {
                 modifiers: KeyModifiers::NONE,
                 ..
             }) => {
-                self.split_buffer();
+                self.create_block();
             }
             Event::Key(KeyEvent {
                 code: KeyCode::F(7),
