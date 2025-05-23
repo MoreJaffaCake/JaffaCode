@@ -221,44 +221,56 @@ impl Editor {
     }
 
     pub fn create_block(&mut self) {
-        let start = self.window.cursor();
-        let line = &self.vlines[start];
-        let indent = line
-            .slice(&self.ropes)
-            .chars()
-            .take_while(|c| *c == ' ')
-            .count();
+        let cursor = self.window.cursor();
+        let line = &self.vlines[cursor];
+        let slice = line.slice(&self.ropes);
+        let indent = slice.chars().take_while(|c| *c == ' ').count();
         if indent == 0 {
             return;
         }
-        let indent = line.slice(&self.ropes).slice(..indent);
+        let indent = slice.slice(..indent);
         let buffer = &self.buffers[line.buffer_key];
-        let mut it = self.vlines.iter(start, buffer.start..buffer.end);
-        let Some((end_key, end_line)) = it.clone().find(|(_, line)| {
-            let slice = line.slice(&self.ropes);
-            slice.len_chars() > 0
-                && (slice.len_chars() < indent.len_chars()
-                    || slice.slice(..indent.len_chars()) != indent)
-        }) else {
+        let it = self.vlines.iter(cursor, buffer.start..buffer.end);
+        let (end_key, _) = self
+            .find_block_edge(it.clone(), '}', indent)
+            .unwrap_or((buffer.end, &self.vlines[buffer.end]));
+        let Some((_, start_line)) = self.find_block_edge(it.reversed(), '{', indent) else {
             return;
         };
-        if !end_line.slice(&self.ropes).chars().any(|c| c == '}') {
-            return;
-        }
-        let Some((_, start_line)) = it.reversed().find(|(_, line)| {
-            let slice = line.slice(&self.ropes);
-            slice.len_chars() > 0
-                && (slice.len_chars() < indent.len_chars()
-                    || slice.slice(..indent.len_chars()) != indent)
-        }) else {
-            return;
-        };
-        if !start_line.slice(&self.ropes).chars().any(|c| c == '{') {
-            return;
-        }
         let start_key = start_line.next;
         self.split_buffer(end_key);
         self.split_buffer(start_key);
+    }
+
+    fn find_block_edge<'r, R>(
+        &self,
+        it: VLineIter<'r, R>,
+        delimiter: char,
+        indent: RopeSlice,
+    ) -> Option<(VLineKey, &'r VLine)>
+    where
+        R: std::ops::RangeBounds<VLineKey>,
+    {
+        let mut res = None;
+        let mut found_delimiter = false;
+        for (key, line) in it {
+            let slice = line.slice(&self.ropes);
+            if slice.len_chars() == 0 {
+                continue;
+            }
+            if slice.chars().any(|c| c == delimiter) {
+                found_delimiter |= true;
+                res = Some((key, line));
+            }
+            if line.continuation {
+                continue;
+            }
+            if slice.len_chars() < indent.len_chars() || slice.slice(..indent.len_chars()) != indent
+            {
+                break;
+            }
+        }
+        res.filter(|_| found_delimiter)
     }
 
     pub fn create_window(&mut self) {

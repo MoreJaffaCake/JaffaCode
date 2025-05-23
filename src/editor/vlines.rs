@@ -301,7 +301,7 @@ where
 
 impl<'v, R> VLineIter<'v, R>
 where
-    R: std::ops::RangeBounds<VLineKey>,
+    R: std::ops::RangeBounds<VLineKey> + Clone,
 {
     pub fn prev(&mut self) -> Option<<Self as Iterator>::Item> {
         if !self.range.contains(&self.index) {
@@ -317,8 +317,9 @@ where
         Some((key, line))
     }
 
-    pub fn reversed(&mut self) -> &mut Self {
-        self.reversed = true;
-        self
+    pub fn reversed(&self) -> Self {
+        let mut instance = self.clone();
+        instance.reversed = true;
+        instance
     }
 }
