@@ -171,7 +171,7 @@ impl Editor {
         }
     }
 
-    fn split_buffer(&mut self, mut start: VLineKey) {
+    fn split_buffer(&mut self, mut start: VLineKey, indent: usize) {
         let mut line = &self.vlines[start];
         loop {
             if !line.continuation {
@@ -189,18 +189,12 @@ impl Editor {
         let rope = &mut self.ropes[line.buffer_key];
         let char_idx = rope.byte_to_char(line.start_byte);
         let mut new_rope = rope.split_off(char_idx);
-        let indent = new_rope
-            .lines()
-            .filter(|line| line.len_chars() > 1)
-            .map(|line| line.chars().take_while(|c| *c == ' ').count())
-            .min()
-            .unwrap_or(0);
         let mut wrap_at = buffer.wrap_at.saturating_sub(indent);
         if wrap_at <= MIN_WRAP_AT {
             wrap_at = buffer.wrap_at;
         }
         // TODO does not dedent the buffer on the top... should we?
-        if indent != buffer.indent {
+        if indent > 0 {
             new_rope = new_rope
                 .lines()
                 .map(|slice| {
@@ -215,7 +209,7 @@ impl Editor {
         }
         let new_rope_key = self.ropes.insert(new_rope);
         dbg!(indent, wrap_at);
-        let new_buffer = Buffer::new(new_rope_key, start, end, wrap_at, indent + buffer.indent);
+        let new_buffer = Buffer::new(new_rope_key, start, end, wrap_at, buffer.indent + indent);
         self.buffers.insert(new_rope_key, new_buffer);
         self.vlines.update_rope(start, new_rope_key, indent);
     }
@@ -229,54 +223,67 @@ impl Editor {
             return;
         }
         let indent = slice.slice(..indent);
-        let buffer = &self.buffers[line.buffer_key];
+        let buffer_key = line.buffer_key;
+        let buffer = &self.buffers[buffer_key];
         let it = self.vlines.iter(cursor, buffer.start..buffer.end);
-        let (end_key, _) = self
-            .find_block_edge(it.clone(), '}', indent)
-            .unwrap_or((buffer.end, &self.vlines[buffer.end]));
-        let Some((_, start_line)) = self.find_block_edge(it.reversed(), '{', indent) else {
-            return;
-        };
-        let start_key = start_line.next;
-        self.split_buffer(end_key);
-        self.split_buffer(start_key);
+        let end_block = self.find_block_edge(it.clone(), indent);
+        let start_block = self.find_block_edge(it.reversed(), indent);
+        let indent = indent.len_chars();
+        #[cfg(debug_assertions)]
+        if let (Some(start_key), Some(end_key)) = (start_block, end_block) {
+            debug_assert_eq!(
+                self.vlines[start_key].buffer_key,
+                self.vlines[end_key].buffer_key
+            );
+        }
+        if let Some(end_key) = end_block {
+            let end_line = &self.vlines[end_key];
+            dbg!(end_line.slice(&self.ropes));
+            self.split_buffer(end_key, 0);
+        }
+        if let Some(start_key) = start_block {
+            let start_line = &self.vlines[start_key];
+            dbg!(start_line.slice(&self.ropes));
+            self.split_buffer(start_line.next, indent);
+        } else {
+            // TODO should we dedent otherwise?
+            //self.buffers[buffer_key].indent += indent;
+        }
     }
 
-    fn find_block_edge<'r, R>(
-        &self,
-        it: VLineIter<'r, R>,
-        delimiter: char,
-        indent: RopeSlice,
-    ) -> Option<(VLineKey, &'r VLine)>
+    fn find_block_edge<R>(&self, mut it: VLineIter<R>, indent: RopeSlice) -> Option<VLineKey>
     where
         R: std::ops::RangeBounds<VLineKey>,
     {
-        let mut res = None;
-        let mut found_delimiter = false;
-        for (key, line) in it {
-            let slice = line.slice(&self.ropes);
-            if slice.len_chars() == 0 {
-                continue;
-            }
-            if slice.chars().any(|c| c == delimiter) {
-                found_delimiter |= true;
-                res = Some((key, line));
-            }
-            if line.continuation {
-                continue;
+        it.find_map(|(key, _)| {
+            let slice = self.vlines.full_slice(&self.ropes, key);
+            if slice.len_chars() == 0 || slice.chars().all(|c| c == ' ') {
+                return None;
             }
             if slice.len_chars() < indent.len_chars() || slice.slice(..indent.len_chars()) != indent
             {
-                break;
+                return Some(key);
             }
-        }
-        res.filter(|_| found_delimiter)
+            None
+        })
     }
 
     pub fn create_window(&mut self) {
         let line = &self.vlines[self.window.cursor()];
-        let buffer = &self.buffers[line.buffer_key];
-        self.window = Window::new(&self.buffers, &self.vlines, buffer.start, buffer.end);
+        let start_buffer = &self.buffers[line.buffer_key];
+        dbg!(start_buffer);
+        let (_, end_buffer) = self
+            .buffers(start_buffer.key)
+            .take_while(|(_, buffer)| buffer.indent >= start_buffer.indent)
+            .last()
+            .unwrap();
+        dbg!(end_buffer);
+        self.window = Window::new(
+            &self.buffers,
+            &self.vlines,
+            start_buffer.start,
+            end_buffer.end,
+        );
     }
 
     pub fn root_window(&mut self) {
@@ -288,5 +295,35 @@ impl Editor {
     pub fn update_pane_size(&mut self, width: u16, height: u16) {
         self.pane_width = width;
         self.pane_height = height;
+    }
+
+    pub fn buffers(&self, at: BufferKey) -> BufferIter {
+        BufferIter {
+            vlines: &self.vlines,
+            buffers: &self.buffers,
+            index: at,
+        }
+    }
+}
+
+#[derive(derive_more::Debug, Clone)]
+pub struct BufferIter<'v, 'b> {
+    vlines: &'v VLines,
+    buffers: &'b BufferMap,
+    index: BufferKey,
+}
+
+impl<'v, 'b> Iterator for BufferIter<'v, 'b> {
+    type Item = (BufferKey, &'b Buffer);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let key = self.index;
+        let buffer = &self.buffers.get(self.index)?;
+        if let Some(next_line) = self.vlines.get(self.vlines[buffer.end].next) {
+            self.index = next_line.buffer_key;
+        } else {
+            self.index = BufferKey::null();
+        }
+        Some((key, buffer))
     }
 }

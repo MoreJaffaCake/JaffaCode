@@ -3,9 +3,10 @@ use super::*;
 #[derive(derive_more::Debug)]
 pub struct Buffer {
     #[debug(skip)]
-    pub buffer_key: BufferKey,
+    pub key: BufferKey,
     #[debug(skip)]
     pub start: VLineKey,
+    #[debug(skip)]
     pub end: VLineKey,
     pub wrap_at: usize,
     pub indent: usize,
@@ -13,7 +14,7 @@ pub struct Buffer {
 
 impl Buffer {
     pub fn new(
-        buffer_key: BufferKey,
+        key: BufferKey,
         start: VLineKey,
         end: VLineKey,
         wrap_at: usize,
@@ -21,7 +22,7 @@ impl Buffer {
     ) -> Self {
         debug_assert!(wrap_at < MAX_WRAP_AT);
         Self {
-            buffer_key,
+            key,
             start,
             end,
             wrap_at,
@@ -38,7 +39,7 @@ impl Buffer {
         text: &str,
         vline_key: VLineKey,
     ) -> VLineKey {
-        ropes[self.buffer_key].insert(char_idx, text);
+        ropes[self.key].insert(char_idx, text);
         vlines.insert(ropes, vline_key, text.len(), self.wrap_at)
     }
 
@@ -51,7 +52,7 @@ impl Buffer {
         c: char,
         vline_key: VLineKey,
     ) {
-        let rope = &mut ropes[self.buffer_key];
+        let rope = &mut ropes[self.key];
         let len_chars_before = rope.len_chars();
         rope.insert_char(char_idx, c);
         let bytes = rope.len_chars() - len_chars_before;
@@ -66,7 +67,7 @@ impl Buffer {
         char_idx: usize,
         vline_key: VLineKey,
     ) {
-        let rope = &mut ropes[self.buffer_key];
+        let rope = &mut ropes[self.key];
         let len_chars_before = rope.len_chars();
         rope.remove(char_idx..=char_idx);
         let bytes = len_chars_before - rope.len_chars();
