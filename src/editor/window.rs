@@ -85,7 +85,6 @@ impl Window {
         let next = vlines[self.start].next;
         if self.prepend_newlines > 0 {
             self.prepend_newlines -= 1;
-            self.cur_y += 1;
             self.clear_position();
             true
         } else if next != self.end && vlines.contains_key(next) {
