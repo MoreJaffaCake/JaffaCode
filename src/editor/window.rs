@@ -508,6 +508,7 @@ where
             });
         }
         let (_, line) = self.vlines_iter.next()?;
+        debug_assert!(self.buffers[line.buffer_key].indent >= self.dedent);
         let indent = self.buffers[line.buffer_key].indent - self.dedent;
         let slice = line.slice(&self.ropes);
         debug_assert!(

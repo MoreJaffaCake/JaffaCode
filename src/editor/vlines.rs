@@ -185,6 +185,8 @@ impl VLines {
         let new_key = self.arena.insert(new_line);
         if let Some(line) = self.arena.get_mut(next) {
             line.prev = new_key;
+        } else if key == self.last {
+            self.last = new_key;
         }
         let line = &mut self.arena[key];
         line.end_byte = split_byte;
@@ -205,6 +207,11 @@ impl VLines {
     #[inline]
     pub fn contains_key(&self, key: VLineKey) -> bool {
         self.arena.contains_key(key)
+    }
+
+    #[inline]
+    pub fn get(&self, key: VLineKey) -> Option<&VLine> {
+        self.arena.get(key)
     }
 
     pub fn update_rope(
@@ -236,6 +243,22 @@ impl VLines {
             line = next_line;
         }
         key
+    }
+
+    pub fn full_slice<'r>(&self, ropes: &'r RopeMap, key: VLineKey) -> RopeSlice<'r> {
+        let (_, end_line) = self
+            .iter(key, ..)
+            .skip(1)
+            .take_while(|(_, line)| line.continuation)
+            .last()
+            .unwrap_or((key, &self.arena[key]));
+        let (_, start_line) = self
+            .iter(key, ..)
+            .reversed()
+            .find(|(_, line)| !line.continuation)
+            .unwrap();
+        debug_assert_eq!(start_line.buffer_key, end_line.buffer_key);
+        ropes[start_line.buffer_key].byte_slice(start_line.start_byte..end_line.end_byte)
     }
 }
 
@@ -285,15 +308,21 @@ where
     type Item = (VLineKey, &'v VLine);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if !self.range.contains(&self.index) {
-            return None;
-        }
+        use std::ops::Bound::*;
         let key = self.index;
         let line = self.arena.get(key)?;
         if self.reversed {
-            self.index = line.prev;
+            match self.range.end_bound() {
+                Excluded(b) if *b == key => return None,
+                Included(b) if *b == line.next => return None,
+                _ => self.index = line.prev,
+            }
         } else {
-            self.index = line.next;
+            match self.range.end_bound() {
+                Excluded(b) if *b == key => return None,
+                Included(b) if *b == line.prev => return None,
+                _ => self.index = line.next,
+            }
         }
         Some((key, line))
     }
@@ -303,20 +332,6 @@ impl<'v, R> VLineIter<'v, R>
 where
     R: std::ops::RangeBounds<VLineKey> + Clone,
 {
-    pub fn prev(&mut self) -> Option<<Self as Iterator>::Item> {
-        if !self.range.contains(&self.index) {
-            return None;
-        }
-        let key = self.index;
-        let line = self.arena.get(key)?;
-        if self.reversed {
-            self.index = line.next;
-        } else {
-            self.index = line.prev;
-        }
-        Some((key, line))
-    }
-
     pub fn reversed(&self) -> Self {
         let mut instance = self.clone();
         instance.reversed = true;
