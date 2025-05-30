@@ -248,6 +248,12 @@ impl VLines {
         debug_assert_eq!(start_line.buffer_key, end_line.buffer_key);
         ropes[start_line.buffer_key].byte_slice(start_line.start_byte..end_line.end_byte)
     }
+
+    pub fn detect_indent(&self, ropes: &RopeMap, key: VLineKey) -> Option<usize> {
+        let slice = self.full_slice(ropes, key);
+        let indent = slice.chars().take_while(|c| *c == ' ').count();
+        (indent < slice.len_chars() - 1).then_some(indent)
+    }
 }
 
 impl std::ops::Index<VLineKey> for VLines {
