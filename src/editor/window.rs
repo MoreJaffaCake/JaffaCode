@@ -66,7 +66,7 @@ impl Window {
 
     pub fn scroll_up(&mut self, vlines: &VLines) -> bool {
         let prev = vlines[self.start].prev;
-        if vlines.contains_key(prev) {
+        if self.start_idx > 0 && vlines.contains_key(prev) {
             self.start = prev;
             self.start_idx -= 1;
             self.move_cursor_prev(vlines);
