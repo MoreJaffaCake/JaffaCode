@@ -38,6 +38,7 @@ pub struct Editor {
 pub struct DisplayLine<'r> {
     pub slice: RopeSlice<'r>,
     pub indent: &'static str,
+    #[allow(dead_code)]
     pub continuation: bool,
 }
 
@@ -216,20 +217,16 @@ impl Editor {
         new_rope_key
     }
 
-    fn create_block(&mut self, at: VLineKey) -> BufferKey {
+    fn create_block(&mut self, at: VLineKey, indent: usize) -> BufferKey {
         let buffer_key = self.vlines[at].buffer_key;
-        let slice = self.vlines.full_slice(&self.ropes, at);
-        let indent = slice.chars().take_while(|c| *c == ' ').count();
         if indent == 0 {
             return buffer_key;
         }
-        let indent = slice.slice(..indent);
         let buffer = &self.buffers[buffer_key];
         let buffer_start = buffer.start;
         let it = self.vlines.iter(at, buffer.start..buffer.end);
         let end_bound = self.find_block_edge(it.clone(), indent);
         let start_bound = self.find_block_edge(it.reversed(), indent);
-        let indent = indent.len_chars();
         if let Some(bound) = end_bound {
             debug_assert_eq!(self.vlines[bound].buffer_key, buffer_key);
             self.split_buffer(bound, 0);
@@ -237,24 +234,30 @@ impl Editor {
         if let Some(bound) = start_bound {
             let next = self.vlines[bound].next;
             debug_assert_eq!(self.vlines[next].buffer_key, buffer_key);
+            dbg!(
+                self.vlines[next].slice(&self.ropes),
+                indent,
+                end_bound.is_some()
+            );
             self.split_buffer(next, indent)
         } else {
+            dbg!(indent);
             self.split_buffer(buffer_start, indent)
         }
     }
 
-    fn find_block_edge<R>(&self, mut it: VLineIter<R>, indent: RopeSlice) -> Option<VLineKey>
+    fn find_block_edge<R>(&self, mut it: VLineIter<R>, indent: usize) -> Option<VLineKey>
     where
         R: std::ops::RangeBounds<VLineKey>,
     {
+        let indent = &HSPACES[..indent];
         it.find_map(|(key, _)| {
             let slice = self.vlines.full_slice(&self.ropes, key);
             let slice = slice.slice(..(slice.len_chars() - 1));
             if slice.len_chars() == 0 || slice.chars().all(|c| c == ' ') {
                 return None;
             }
-            if slice.len_chars() < indent.len_chars() || slice.slice(..indent.len_chars()) != indent
-            {
+            if slice.len_chars() < indent.len() || slice.slice(..indent.len()) != indent {
                 return Some(key);
             }
             None
@@ -263,19 +266,45 @@ impl Editor {
 
     pub fn create_window(&mut self) {
         let cursor = self.window.cursor();
-        let buffer_key = self.create_block(cursor);
-        let start_buffer = &self.buffers[buffer_key];
-        let (_, last_buffer) = self
-            .buffers(start_buffer.key)
-            .take_while(|(_, buffer)| buffer.indent >= start_buffer.indent)
+        let indent = self.vlines.detect_indent(&self.ropes, cursor);
+        if indent == 0 {
+            let buffer = &self.buffers[self.vlines[cursor].buffer_key];
+            self.window = Window::new(&self.buffers, &self.vlines, buffer.start, buffer.end);
+        } else {
+            let key = self.create_block(cursor, indent);
+            let first = std::iter::successors(Some(key), |key| {
+                let key = *key;
+                let buffer = &self.buffers[key];
+                let prev_indent = self.vlines.detect_indent(&self.ropes, buffer.end);
+                if prev_indent < indent {
+                    return None;
+                }
+                let prev = self.create_block(buffer.end, indent);
+                debug_assert_ne!(prev, key);
+                Some(prev)
+            })
             .last()
             .unwrap();
-        self.window = Window::new(
-            &self.buffers,
-            &self.vlines,
-            start_buffer.start,
-            last_buffer.end,
-        );
+            let last = std::iter::successors(Some(key), |key| {
+                let key = *key;
+                let buffer = &self.buffers[key];
+                let next_indent = self.vlines.detect_indent(&self.ropes, buffer.start);
+                if next_indent < indent {
+                    return None;
+                }
+                let next = self.create_block(buffer.start, indent);
+                debug_assert_ne!(next, key);
+                Some(next)
+            })
+            .last()
+            .unwrap();
+            self.window = Window::new(
+                &self.buffers,
+                &self.vlines,
+                self.buffers[first].start,
+                self.buffers[last].end,
+            );
+        }
     }
 
     pub fn root_window(&mut self) {
@@ -287,35 +316,5 @@ impl Editor {
     pub fn update_pane_size(&mut self, width: u16, height: u16) {
         self.pane_width = width;
         self.pane_height = height;
-    }
-
-    pub fn buffers(&self, at: BufferKey) -> BufferIter {
-        BufferIter {
-            vlines: &self.vlines,
-            buffers: &self.buffers,
-            index: at,
-        }
-    }
-}
-
-#[derive(derive_more::Debug, Clone)]
-pub struct BufferIter<'v, 'b> {
-    vlines: &'v VLines,
-    buffers: &'b BufferMap,
-    index: BufferKey,
-}
-
-impl<'v, 'b> Iterator for BufferIter<'v, 'b> {
-    type Item = (BufferKey, &'b Buffer);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let key = self.index;
-        let buffer = &self.buffers.get(key)?;
-        if let Some(next_line) = self.vlines.get(buffer.end) {
-            self.index = next_line.buffer_key;
-        } else {
-            self.index = BufferKey::null();
-        }
-        Some((key, buffer))
     }
 }

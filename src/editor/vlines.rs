@@ -209,11 +209,6 @@ impl VLines {
         self.arena.contains_key(key)
     }
 
-    #[inline]
-    pub fn get(&self, key: VLineKey) -> Option<&VLine> {
-        self.arena.get(key)
-    }
-
     pub fn update_rope(
         &mut self,
         mut key: VLineKey,
@@ -259,6 +254,13 @@ impl VLines {
             .unwrap();
         debug_assert_eq!(start_line.buffer_key, end_line.buffer_key);
         ropes[start_line.buffer_key].byte_slice(start_line.start_byte..end_line.end_byte)
+    }
+
+    pub fn detect_indent(&self, ropes: &RopeMap, key: VLineKey) -> usize {
+        self.full_slice(ropes, key)
+            .chars()
+            .take_while(|c| *c == ' ')
+            .count()
     }
 }
 
