@@ -171,7 +171,7 @@ impl Editor {
         }
     }
 
-    fn split_buffer(&mut self, mut at: VLineKey, indent: usize) {
+    fn split_buffer(&mut self, mut at: VLineKey, indent: usize) -> BufferKey {
         let mut line = &self.vlines[at];
         loop {
             if !line.continuation {
@@ -213,20 +213,20 @@ impl Editor {
         let new_buffer = Buffer::new(new_rope_key, at, end, wrap_at, buffer.indent + indent);
         self.buffers.insert(new_rope_key, new_buffer);
         self.vlines.update_rope(at, new_rope_key, indent);
+        new_rope_key
     }
 
-    pub fn create_block(&mut self) {
-        let cursor = self.window.cursor();
-        let buffer_key = self.vlines[cursor].buffer_key;
-        let slice = self.vlines.full_slice(&self.ropes, cursor);
+    fn create_block(&mut self, at: VLineKey) -> BufferKey {
+        let buffer_key = self.vlines[at].buffer_key;
+        let slice = self.vlines.full_slice(&self.ropes, at);
         let indent = slice.chars().take_while(|c| *c == ' ').count();
         if indent == 0 {
-            return;
+            return buffer_key;
         }
         let indent = slice.slice(..indent);
         let buffer = &self.buffers[buffer_key];
         let buffer_start = buffer.start;
-        let it = self.vlines.iter(cursor, buffer.start..buffer.end);
+        let it = self.vlines.iter(at, buffer.start..buffer.end);
         let end_bound = self.find_block_edge(it.clone(), indent);
         let start_bound = self.find_block_edge(it.reversed(), indent);
         let indent = indent.len_chars();
@@ -237,9 +237,9 @@ impl Editor {
         if let Some(bound) = start_bound {
             let next = self.vlines[bound].next;
             debug_assert_eq!(self.vlines[next].buffer_key, buffer_key);
-            self.split_buffer(next, indent);
+            self.split_buffer(next, indent)
         } else {
-            self.split_buffer(buffer_start, indent);
+            self.split_buffer(buffer_start, indent)
         }
     }
 
@@ -262,8 +262,9 @@ impl Editor {
     }
 
     pub fn create_window(&mut self) {
-        let line = &self.vlines[self.window.cursor()];
-        let start_buffer = &self.buffers[line.buffer_key];
+        let cursor = self.window.cursor();
+        let buffer_key = self.create_block(cursor);
+        let start_buffer = &self.buffers[buffer_key];
         let (_, last_buffer) = self
             .buffers(start_buffer.key)
             .take_while(|(_, buffer)| buffer.indent >= start_buffer.indent)
