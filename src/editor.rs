@@ -57,7 +57,7 @@ impl Editor {
         let mut buffers = BufferMap::new();
         buffers.insert(
             rope_key,
-            Buffer::new(rope_key, vlines.first(), vlines.last(), 40, 0),
+            Buffer::new(rope_key, vlines.first(), VLineKey::null(), 40, 0),
         );
 
         let window = Window::new(&buffers, &vlines, vlines.first(), VLineKey::null());
@@ -200,7 +200,10 @@ impl Editor {
                 .lines()
                 .map(|slice| {
                     if slice.len_chars() > 1 {
-                        debug_assert!(slice.len_chars() > indent, "{slice:?} (indent: {indent})");
+                        debug_assert!(
+                            slice.len_chars() > indent,
+                            "dedent failed: {slice:?} (indent: {indent})",
+                        );
                         slice.slice(indent..)
                     } else {
                         slice

@@ -10,8 +10,6 @@ pub struct VLines {
     arena: SlotMap<VLineKey, VLine>,
     #[debug(skip)]
     first: VLineKey,
-    #[debug(skip)]
-    last: VLineKey,
 }
 
 impl VLines {
@@ -20,7 +18,6 @@ impl VLines {
         let mut instance = Self {
             arena,
             first: VLineKey::null(),
-            last: VLineKey::null(),
         };
         let rope = &ropes[buffer_key];
         let mut it = rope.lines();
@@ -60,8 +57,6 @@ impl VLines {
             prev_end = end_byte;
             prev = key;
         }
-
-        instance.last = prev;
 
         instance
     }
@@ -185,8 +180,6 @@ impl VLines {
         let new_key = self.arena.insert(new_line);
         if let Some(line) = self.arena.get_mut(next) {
             line.prev = new_key;
-        } else if key == self.last {
-            self.last = new_key;
         }
         let line = &mut self.arena[key];
         line.end_byte = split_byte;
@@ -197,11 +190,6 @@ impl VLines {
     #[inline(always)]
     pub fn first(&self) -> VLineKey {
         self.first
-    }
-
-    #[inline(always)]
-    pub fn last(&self) -> VLineKey {
-        self.last
     }
 
     #[inline]
@@ -312,7 +300,7 @@ where
         let key = self.index;
         let line = self.arena.get(key)?;
         if self.reversed {
-            match self.range.end_bound() {
+            match self.range.start_bound() {
                 Excluded(b) if *b == key => return None,
                 Included(b) if *b == line.next => return None,
                 _ => self.index = line.prev,
