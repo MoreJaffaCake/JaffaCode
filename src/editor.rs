@@ -109,7 +109,8 @@ impl Editor {
 
     #[inline]
     pub fn move_cursor_left(&mut self) {
-        self.window.move_cursor_left(&self.vlines, &self.ropes)
+        self.window
+            .move_cursor_left(&self.vlines, &self.ropes, &self.buffers)
     }
 
     #[inline]

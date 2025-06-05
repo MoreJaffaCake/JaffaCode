@@ -219,7 +219,7 @@ impl Window {
         }
     }
 
-    pub fn move_cursor_left(&mut self, vlines: &VLines, ropes: &RopeMap) {
+    pub fn move_cursor_left(&mut self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) {
         if self.cur_x > 0 {
             self.cur_x -= 1;
         } else {
@@ -231,10 +231,7 @@ impl Window {
             } else {
                 return;
             }
-            self.cur_x = vlines[self.cursor]
-                .slice(ropes)
-                .len_chars()
-                .saturating_sub(1) as _;
+            self.move_cursor_at_end(vlines, ropes, buffers);
         }
         self.clear_position();
     }
