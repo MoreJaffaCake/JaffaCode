@@ -11,7 +11,7 @@ use self::window::*;
 use ropey::*;
 use slotmap::*;
 
-const MAX_WRAP_AT: usize = 200;
+const INDENT: usize = 4;
 const MIN_WRAP_AT: usize = 12;
 static HSPACES: &str = "                                                                                                                                                                                                        ";
 static VSPACES: &str = "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n";
@@ -75,25 +75,47 @@ impl Editor {
 
     #[inline]
     pub fn insert_char(&mut self, c: char) {
-        self.window.insert_char(
+        if self.window.insert_char(
             &mut self.vlines,
             &mut self.ropes,
             &self.buffers,
             c,
             self.pane_height - 1,
-        )
+        ) {
+            return;
+        } else if c == ' ' {
+            if self.indent() {
+                for _ in 0..INDENT {
+                    self.window.move_cursor_right(&self.vlines, &self.buffers);
+                }
+            }
+        }
     }
 
     #[inline]
     pub fn delete_char_forward(&mut self) {
-        self.window
+        if self
+            .window
             .delete_char_forward(&mut self.vlines, &mut self.ropes, &self.buffers)
+        {
+            return;
+        }
+        self.dedent();
     }
 
     #[inline]
     pub fn delete_char_backward(&mut self) {
-        self.window
+        if self
+            .window
             .delete_char_backward(&mut self.vlines, &mut self.ropes, &self.buffers)
+        {
+            return;
+        }
+        if self.dedent() {
+            for _ in 0..INDENT {
+                self.window.move_cursor_left_saturating();
+            }
+        }
     }
 
     #[inline]
@@ -266,6 +288,40 @@ impl Editor {
             }
             None
         })
+    }
+
+    fn indent(&mut self) -> bool {
+        let cursor = self.window.cursor();
+        if let Some(relative_indent) = self.vlines.detect_indent(&self.ropes, cursor) {
+            self.create_block(cursor, relative_indent);
+        }
+        let buffer = &mut self.buffers[self.vlines[cursor].buffer_key];
+        let wrap_at = buffer.wrap_at.saturating_sub(INDENT);
+        if wrap_at <= MIN_WRAP_AT {
+            return false;
+        }
+        buffer.wrap_at = wrap_at;
+        buffer.indent += INDENT;
+        buffer.rewrap(&mut self.vlines, &self.ropes);
+        dbg!("buffer indented");
+        true
+    }
+
+    fn dedent(&mut self) -> bool {
+        let cursor = self.window.cursor();
+        if let Some(relative_indent) = self.vlines.detect_indent(&self.ropes, cursor) {
+            self.create_block(cursor, relative_indent);
+        }
+        let buffer = &mut self.buffers[self.vlines[cursor].buffer_key];
+        let wrap_at = buffer.wrap_at + INDENT;
+        if buffer.indent < INDENT {
+            return false;
+        }
+        buffer.wrap_at = wrap_at;
+        buffer.indent -= INDENT;
+        buffer.rewrap(&mut self.vlines, &self.ropes);
+        dbg!("buffer dedented");
+        true
     }
 
     pub fn create_window(&mut self) {

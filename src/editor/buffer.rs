@@ -20,7 +20,7 @@ impl Buffer {
         wrap_at: usize,
         indent: usize,
     ) -> Self {
-        debug_assert!(wrap_at < MAX_WRAP_AT);
+        debug_assert!(wrap_at < HSPACES.len());
         Self {
             key,
             start,
@@ -72,5 +72,17 @@ impl Buffer {
         rope.remove(char_idx..=char_idx);
         let bytes = len_chars_before - rope.len_chars();
         vlines.remove(ropes, vline_key, bytes, self.wrap_at);
+    }
+
+    pub fn rewrap(&self, vlines: &mut VLines, ropes: &RopeMap) {
+        let mut key = self.start;
+        loop {
+            vlines.wrap(ropes, key, self.wrap_at);
+            let next = vlines[key].next;
+            if next == self.end {
+                break;
+            }
+            key = next;
+        }
     }
 }

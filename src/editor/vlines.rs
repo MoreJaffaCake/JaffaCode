@@ -61,7 +61,7 @@ impl VLines {
         instance
     }
 
-    fn wrap(&mut self, ropes: &RopeMap, mut key: VLineKey, wrap_at: usize) -> VLineKey {
+    pub fn wrap(&mut self, ropes: &RopeMap, mut key: VLineKey, wrap_at: usize) -> VLineKey {
         loop {
             let line = &self.arena[key];
             let slice = line.slice(ropes);
@@ -252,7 +252,7 @@ impl VLines {
     pub fn detect_indent(&self, ropes: &RopeMap, key: VLineKey) -> Option<usize> {
         let slice = self.full_slice(ropes, key);
         let indent = slice.chars().take_while(|c| *c == ' ').count();
-        (indent < slice.len_chars() - 1).then_some(indent)
+        (indent < slice.len_chars() - 1).then_some(indent / INDENT * INDENT)
     }
 }
 

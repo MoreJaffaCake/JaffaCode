@@ -236,6 +236,13 @@ impl Window {
         self.clear_position();
     }
 
+    pub fn move_cursor_left_saturating(&mut self) {
+        if self.cur_x > 0 {
+            self.cur_x -= 1;
+            self.clear_position();
+        }
+    }
+
     pub fn move_cursor_right(&mut self, vlines: &VLines, buffers: &BufferMap) {
         let buffer = &buffers[vlines[self.cursor].buffer_key];
         if self.cur_x as usize + 1 < buffer.wrap_at + buffer.indent {
@@ -293,7 +300,7 @@ impl Window {
         vlines: &mut VLines,
         ropes: &mut RopeMap,
         buffers: &BufferMap,
-    ) {
+    ) -> bool {
         let Position {
             trailing_spaces,
             mut char_idx,
@@ -302,8 +309,10 @@ impl Window {
         } = self.position(vlines, ropes, buffers);
         let line = &vlines[self.cursor];
         let buffer = &buffers[line.buffer_key];
-        if char_idx >= ropes[line.buffer_key].len_chars() || invalid {
-            return;
+        if invalid {
+            return false;
+        } else if char_idx >= ropes[line.buffer_key].len_chars() {
+            return true;
         }
         if self.prepend_newlines > 0 {
             debug_assert!(char_idx == 0);
@@ -331,6 +340,7 @@ impl Window {
             p.char_idx = char_idx;
             p.trailing_spaces = 0;
         });
+        true
     }
 
     pub fn insert_char(
@@ -340,7 +350,7 @@ impl Window {
         buffers: &BufferMap,
         c: char,
         limit: u16,
-    ) {
+    ) -> bool {
         let Position {
             trailing_spaces,
             mut char_idx,
@@ -349,10 +359,19 @@ impl Window {
             invalid,
             ..
         } = self.position(vlines, ropes, buffers);
-        if invalid {
-            return;
-        }
         let line = &vlines[self.cursor];
+        if invalid
+            || (c == ' '
+                && !line
+                    .slice(ropes)
+                    .chars()
+                    // NOTE: **round up** with INDENT
+                    .take((relative_x + INDENT - 1) / INDENT * INDENT)
+                    .any(|c| c != ' '))
+        {
+            self.clear_position();
+            return false;
+        }
         let buffer = &buffers[line.buffer_key];
         if self.prepend_newlines > 0 {
             buffer.insert(
@@ -408,6 +427,7 @@ impl Window {
             p.newlines = 0;
             p.relative_x = relative_x;
         });
+        true
     }
 
     pub fn delete_char_backward(
@@ -415,7 +435,7 @@ impl Window {
         vlines: &mut VLines,
         ropes: &mut RopeMap,
         buffers: &BufferMap,
-    ) {
+    ) -> bool {
         let Position {
             mut char_idx,
             trailing_spaces,
@@ -425,8 +445,16 @@ impl Window {
         } = self.position(vlines, ropes, buffers);
         let line = &vlines[self.cursor];
         let buffer = &buffers[line.buffer_key];
-        if invalid {
-            return;
+        if invalid
+            || !line
+                .slice(ropes)
+                .chars()
+                // NOTE: **round up** with INDENT
+                .take((relative_x + INDENT - 1) / INDENT * INDENT)
+                .any(|c| c != ' ')
+        {
+            self.clear_position();
+            return false;
         } else if relative_x > 0 {
             self.cur_x -= 1;
             self.with_position(|p| p.relative_x -= 1);
@@ -455,12 +483,13 @@ impl Window {
             } else {
                 self.with_position(|p| p.newlines -= 1);
             }
-            return;
+            return true;
         } else {
-            self.scroll_up(vlines);
-            let line = &vlines[self.cursor];
-            let len_chars = line.slice(ropes).len_chars().saturating_sub(1);
-            self.cur_x = (len_chars + buffer.indent - self.indent) as u16;
+            if self.scroll_up(vlines) {
+                let line = &vlines[self.cursor];
+                let len_chars = line.slice(ropes).len_chars().saturating_sub(1);
+                self.cur_x = (len_chars + buffer.indent - self.indent) as u16;
+            }
         }
         if trailing_spaces == 0 {
             char_idx -= 1;
@@ -469,6 +498,7 @@ impl Window {
         } else {
             self.with_position(|p| p.trailing_spaces -= 1);
         }
+        true
     }
 }
 
