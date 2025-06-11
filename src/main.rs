@@ -77,7 +77,8 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                 editor.update_pane_size(inner.width, inner.height);
                 if i == active_editor {
                     block = block.title("Active");
-                    let (x, y) = editor.cursor_position();
+                    let (mut x, y) = editor.cursor_position();
+                    x += 3;
                     let offset = inner.offset(Offset { x, y }).intersection(inner);
                     if !offset.is_empty() {
                         f.set_cursor_position(offset);
@@ -92,7 +93,11 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                                  indent,
                                  continuation: _,
                              }| {
-                                Line::from(vec![Span::raw(indent), Span::raw(slice)])
+                                Line::from(vec![
+                                    Span::raw(format!("{:02} ", indent.len())),
+                                    Span::raw(indent),
+                                    Span::raw(slice),
+                                ])
                             },
                         )
                         .collect::<Vec<_>>(),
@@ -146,7 +151,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     continue;
                 }
                 Event::Key(KeyEvent {
-                    code: KeyCode::Esc, ..
+                    code: KeyCode::Char('q'),
+                    modifiers: KeyModifiers::CONTROL,
+                    ..
                 }) => return Ok(()),
                 Event::Key(KeyEvent {
                     code: KeyCode::PageUp,
