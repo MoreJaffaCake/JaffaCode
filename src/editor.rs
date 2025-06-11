@@ -105,10 +105,12 @@ impl Editor {
 
     #[inline]
     pub fn delete_char_backward(&mut self) {
-        if self
-            .window
-            .delete_char_backward(&mut self.vlines, &mut self.ropes, &self.buffers)
-        {
+        if self.window.delete_char_backward(
+            &mut self.vlines,
+            &mut self.ropes,
+            &self.buffers,
+            self.pane_height - 1,
+        ) {
             return;
         }
         if self.dedent() {
@@ -120,7 +122,8 @@ impl Editor {
 
     #[inline]
     pub fn move_cursor_up(&mut self) {
-        self.window.move_cursor_up(&self.vlines)
+        self.window
+            .move_cursor_up(&self.vlines, self.pane_height - 1)
     }
 
     #[inline]
@@ -131,8 +134,12 @@ impl Editor {
 
     #[inline]
     pub fn move_cursor_left(&mut self) {
-        self.window
-            .move_cursor_left(&self.vlines, &self.ropes, &self.buffers)
+        self.window.move_cursor_left(
+            &self.vlines,
+            &self.ropes,
+            &self.buffers,
+            self.pane_height - 1,
+        )
     }
 
     #[inline]
@@ -171,7 +178,7 @@ impl Editor {
 
     #[inline]
     pub fn scroll_up(&mut self) {
-        self.window.scroll_up(&self.vlines);
+        self.window.scroll_up(&self.vlines, self.pane_height - 1);
     }
 
     #[inline]
@@ -180,16 +187,22 @@ impl Editor {
     }
 
     pub fn page_up(&mut self) {
-        for _ in 0..self.pane_height {
-            if !self.window.scroll_up(&self.vlines) {
+        let mut count = 0;
+        while count < self.pane_height {
+            let i = self.window.scroll_up(&self.vlines, self.pane_height - 1);
+            count += i;
+            if i == 0 {
                 break;
             }
         }
     }
 
     pub fn page_down(&mut self) {
-        for _ in 0..self.pane_height {
-            if !self.window.scroll_down(&self.vlines) {
+        let mut count = 0;
+        while count < self.pane_height {
+            let i = self.window.scroll_down(&self.vlines);
+            count += i;
+            if i == 0 {
                 break;
             }
         }
