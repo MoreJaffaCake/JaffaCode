@@ -77,7 +77,7 @@ impl Buffer {
     pub fn rewrap(&self, vlines: &mut VLines, ropes: &RopeMap) {
         let mut key = self.start;
         loop {
-            vlines.wrap(ropes, key, self.wrap_at);
+            key = vlines.wrap(ropes, key, self.wrap_at);
             let next = vlines[key].next;
             if next == self.end {
                 break;
