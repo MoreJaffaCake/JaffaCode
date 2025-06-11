@@ -292,34 +292,64 @@ impl Editor {
 
     fn indent(&mut self) -> bool {
         let cursor = self.window.cursor();
-        if let Some(relative_indent) = self.vlines.detect_indent(&self.ropes, cursor) {
-            self.create_block(cursor, relative_indent);
+        let mut key = self.create_block(
+            cursor,
+            self.vlines.detect_indent(&self.ropes, cursor).unwrap_or(0),
+        );
+        let indent = self.buffers[key].indent;
+        loop {
+            let buffer = &mut self.buffers[key];
+            let next = buffer.end;
+            let wrap_at = buffer.wrap_at.saturating_sub(INDENT);
+            if wrap_at <= MIN_WRAP_AT {
+                todo!("indented too far, need to revert previous indent?");
+            }
+            buffer.wrap_at = wrap_at;
+            buffer.indent += INDENT;
+            buffer.rewrap(&mut self.vlines, &self.ropes);
+            let detected_indent = self
+                .vlines
+                .iter(next, ..)
+                .find_map(|(key, _)| self.vlines.detect_indent(&self.ropes, key))
+                .unwrap_or(0);
+            if self.buffers[self.vlines[next].buffer_key].indent + detected_indent < indent {
+                break;
+            }
+            key = self.create_block(next, detected_indent);
         }
-        let buffer = &mut self.buffers[self.vlines[cursor].buffer_key];
-        let wrap_at = buffer.wrap_at.saturating_sub(INDENT);
-        if wrap_at <= MIN_WRAP_AT {
-            return false;
-        }
-        buffer.wrap_at = wrap_at;
-        buffer.indent += INDENT;
-        buffer.rewrap(&mut self.vlines, &self.ropes);
+        // TODO do the same with the buffers above the cursor
         dbg!("buffer indented");
         true
     }
 
     fn dedent(&mut self) -> bool {
         let cursor = self.window.cursor();
-        if let Some(relative_indent) = self.vlines.detect_indent(&self.ropes, cursor) {
-            self.create_block(cursor, relative_indent);
-        }
-        let buffer = &mut self.buffers[self.vlines[cursor].buffer_key];
-        let wrap_at = buffer.wrap_at + INDENT;
-        if buffer.indent < INDENT {
+        let mut key = self.create_block(
+            cursor,
+            self.vlines.detect_indent(&self.ropes, cursor).unwrap_or(0),
+        );
+        if self.buffers[key].indent < INDENT {
             return false;
         }
-        buffer.wrap_at = wrap_at;
-        buffer.indent -= INDENT;
-        buffer.rewrap(&mut self.vlines, &self.ropes);
+        let indent = self.buffers[key].indent;
+        loop {
+            let buffer = &mut self.buffers[key];
+            let next = buffer.end;
+            let wrap_at = buffer.wrap_at + INDENT;
+            buffer.wrap_at = wrap_at;
+            buffer.indent -= INDENT;
+            buffer.rewrap(&mut self.vlines, &self.ropes);
+            let detected_indent = self
+                .vlines
+                .iter(next, ..)
+                .find_map(|(key, _)| self.vlines.detect_indent(&self.ropes, key))
+                .unwrap_or(0);
+            if self.buffers[self.vlines[next].buffer_key].indent + detected_indent < indent {
+                break;
+            }
+            key = self.create_block(next, detected_indent);
+        }
+        // TODO do the same with the buffers above the cursor
         dbg!("buffer dedented");
         true
     }
