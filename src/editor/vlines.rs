@@ -94,15 +94,10 @@ impl VLines {
     }
 
     #[inline(always)]
-    pub fn iter<R>(&self, index: VLineKey, range: R) -> VLineIter<R>
-    where
-        R: std::ops::RangeBounds<VLineKey>,
-    {
+    pub fn iter(&self, index: VLineKey) -> VLineIter {
         VLineIter {
-            arena: &self.arena,
+            vlines: self,
             index,
-            range,
-            reversed: false,
         }
     }
 
@@ -232,28 +227,6 @@ impl VLines {
         }
         key
     }
-
-    pub fn full_slice<'r>(&self, ropes: &'r RopeMap, key: VLineKey) -> RopeSlice<'r> {
-        let (_, end_line) = self
-            .iter(key, ..)
-            .skip(1)
-            .take_while(|(_, line)| line.continuation)
-            .last()
-            .unwrap_or((key, &self.arena[key]));
-        let (_, start_line) = self
-            .iter(key, ..)
-            .reversed()
-            .find(|(_, line)| !line.continuation)
-            .unwrap();
-        debug_assert_eq!(start_line.buffer_key, end_line.buffer_key);
-        ropes[start_line.buffer_key].byte_slice(start_line.start_byte..end_line.end_byte)
-    }
-
-    pub fn detect_indent(&self, ropes: &RopeMap, key: VLineKey) -> Option<usize> {
-        let slice = self.full_slice(ropes, key);
-        let indent = slice.chars().take_while(|c| *c == ' ').count();
-        (indent < slice.len_chars() - 1).then_some(indent / INDENT * INDENT)
-    }
 }
 
 impl std::ops::Index<VLineKey> for VLines {
@@ -261,6 +234,14 @@ impl std::ops::Index<VLineKey> for VLines {
 
     fn index(&self, key: VLineKey) -> &Self::Output {
         &self.arena[key]
+    }
+}
+
+impl std::ops::Index<VLineCursor> for VLines {
+    type Output = VLine;
+
+    fn index(&self, cur: VLineCursor) -> &Self::Output {
+        &self.arena[cur.key]
     }
 }
 
@@ -285,50 +266,172 @@ impl VLine {
 }
 
 #[derive(derive_more::Debug, Clone)]
-pub struct VLineIter<'v, R> {
+pub struct VLineIter<'v> {
     #[debug(skip)]
-    arena: &'v SlotMap<VLineKey, VLine>,
+    vlines: &'v VLines,
     #[debug(skip)]
     index: VLineKey,
-    #[debug(skip)]
-    range: R,
-    reversed: bool,
 }
 
-impl<'v, R> Iterator for VLineIter<'v, R>
-where
-    R: std::ops::RangeBounds<VLineKey>,
-{
+impl<'v> Iterator for VLineIter<'v> {
     type Item = (VLineKey, &'v VLine);
 
     fn next(&mut self) -> Option<Self::Item> {
-        use std::ops::Bound::*;
         let key = self.index;
-        let line = self.arena.get(key)?;
-        if self.reversed {
-            match self.range.start_bound() {
-                Excluded(b) if *b == key => return None,
-                Included(b) if *b == line.next => return None,
-                _ => self.index = line.prev,
-            }
-        } else {
-            match self.range.end_bound() {
-                Excluded(b) if *b == key => return None,
-                Included(b) if *b == line.prev => return None,
-                _ => self.index = line.next,
-            }
-        }
+        let line = self.vlines.get(key)?;
+        self.index = line.next;
         Some((key, line))
     }
 }
 
-impl<'v, R> VLineIter<'v, R>
-where
-    R: std::ops::RangeBounds<VLineKey> + Clone,
-{
-    pub fn reversed(&self) -> Self {
-        let mut instance = self.clone();
-        instance.reversed = true;
-        instance
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VLineCursor {
+    pub key: VLineKey,
+    pub offset: usize,
+}
+
+impl From<VLineCursor> for VLineKey {
+    fn from(cur: VLineCursor) -> Self {
+        cur.key
+    }
+}
+
+impl From<VLineKey> for VLineCursor {
+    fn from(key: VLineKey) -> Self {
+        Self { key, offset: 0 }
+    }
+}
+
+impl VLineCursor {
+    pub fn new(vlines: &VLines, key: VLineKey) -> Self {
+        debug_assert!(!vlines[key].continuation);
+        Self { key, offset: 0 }
+    }
+
+    pub fn null() -> Self {
+        Self {
+            key: VLineKey::null(),
+            offset: 0,
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.key.is_null()
+    }
+
+    fn last_vline<'v>(&self, vlines: &'v VLines) -> (VLineKey, &'v VLine) {
+        vlines
+            .iter(self.key)
+            .skip(1)
+            .filter(|(_, line)| line.continuation)
+            .last()
+            .unwrap_or_else(|| (self.key, &vlines[self.key]))
+    }
+
+    pub fn get_prev(&self, vlines: &VLines) -> Option<Self> {
+        let mut key = vlines[self.key].prev;
+        loop {
+            let line = vlines.get(key)?;
+            if !line.continuation {
+                break;
+            }
+            key = line.prev;
+        }
+        Some(Self { key, offset: 0 })
+    }
+
+    pub fn get_next(&self, vlines: &VLines) -> Option<Self> {
+        let mut key = vlines[self.key].next;
+        loop {
+            let line = vlines.get(key)?;
+            if !line.continuation {
+                break;
+            }
+            key = line.next;
+        }
+        Some(Self { key, offset: 0 })
+    }
+
+    pub fn go_next_if(&mut self, vlines: &VLines, cond: impl FnOnce(VLineCursor) -> bool) -> bool {
+        let Some(next) = self.get_next(vlines) else {
+            return false;
+        };
+        if !(cond)(next) {
+            return false;
+        }
+        *self = next;
+        true
+    }
+
+    #[inline(always)]
+    pub fn iter<'v>(&self, vlines: &'v VLines) -> VLineCursorIter<'v> {
+        VLineCursorIter {
+            vlines,
+            index: Some(*self),
+            reversed: false,
+            start_bound: None,
+            end_bound: None,
+        }
+    }
+
+    pub fn full_slice<'r>(&self, vlines: &VLines, ropes: &'r RopeMap) -> RopeSlice<'r> {
+        let start_line = &vlines[self.key];
+        let (_, end_line) = self.last_vline(vlines);
+        debug_assert_eq!(start_line.buffer_key, end_line.buffer_key);
+        ropes[start_line.buffer_key].byte_slice(start_line.start_byte..end_line.end_byte)
+    }
+
+    pub fn detect_indent(&self, vlines: &VLines, ropes: &RopeMap) -> Option<usize> {
+        let slice = self.full_slice(vlines, ropes);
+        let indent = slice.chars().take_while(|c| *c == ' ').count();
+        (indent < slice.len_chars() - 1).then_some(indent / INDENT * INDENT)
+    }
+}
+
+#[derive(derive_more::Debug, Clone)]
+pub struct VLineCursorIter<'v> {
+    #[debug(skip)]
+    vlines: &'v VLines,
+    #[debug(skip)]
+    index: Option<VLineCursor>,
+    reversed: bool,
+    start_bound: Option<VLineCursor>,
+    end_bound: Option<VLineCursor>,
+}
+
+impl Iterator for VLineCursorIter<'_> {
+    type Item = VLineCursor;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index == self.start_bound {
+            return None;
+        }
+        let mut index = if self.reversed {
+            self.index?.get_prev(&self.vlines)
+        } else {
+            self.index?.get_next(&self.vlines)
+        };
+        if index == self.end_bound {
+            index = None;
+        }
+        self.index = index;
+        index
+    }
+}
+
+impl VLineCursorIter<'_> {
+    pub fn reversed(mut self) -> Self {
+        self.reversed ^= true;
+        self
+    }
+
+    pub fn start_bounded(mut self, cursor: VLineCursor) -> Self {
+        self.start_bound = Some(cursor);
+        self
+    }
+
+    pub fn end_bounded(mut self, cursor: VLineCursor) -> Self {
+        self.end_bound = Some(cursor);
+        self
     }
 }

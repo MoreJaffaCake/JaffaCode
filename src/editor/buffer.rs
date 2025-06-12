@@ -5,9 +5,9 @@ pub struct Buffer {
     #[debug(skip)]
     pub key: BufferKey,
     #[debug(skip)]
-    pub start: VLineKey,
+    pub start: VLineCursor,
     #[debug(skip)]
-    pub end: VLineKey,
+    pub end: VLineCursor,
     pub wrap_at: usize,
     pub indent: usize,
 }
@@ -15,8 +15,8 @@ pub struct Buffer {
 impl Buffer {
     pub fn new(
         key: BufferKey,
-        start: VLineKey,
-        end: VLineKey,
+        start: VLineCursor,
+        end: VLineCursor,
         wrap_at: usize,
         indent: usize,
     ) -> Self {
@@ -75,11 +75,11 @@ impl Buffer {
     }
 
     pub fn rewrap(&self, vlines: &mut VLines, ropes: &RopeMap) {
-        let mut key = self.start;
+        let mut key = VLineKey::from(self.start);
         loop {
             key = vlines.wrap(ropes, key, self.wrap_at);
             let next = vlines[key].next;
-            if next == self.end {
+            if next == self.end.into() {
                 break;
             }
             key = next;
