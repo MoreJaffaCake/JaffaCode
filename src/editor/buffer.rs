@@ -37,10 +37,10 @@ impl Buffer {
         ropes: &mut RopeMap,
         char_idx: usize,
         text: &str,
-        vline_key: VLineKey,
+        cursor: VLineCursor,
     ) -> VLineKey {
         ropes[self.key].insert(char_idx, text);
-        vlines.insert(ropes, vline_key, text.len(), self.wrap_at)
+        cursor.insert(vlines, ropes, text.len(), self.wrap_at)
     }
 
     #[inline]
@@ -50,13 +50,13 @@ impl Buffer {
         ropes: &mut RopeMap,
         char_idx: usize,
         c: char,
-        vline_key: VLineKey,
+        cursor: VLineCursor,
     ) {
         let rope = &mut ropes[self.key];
         let len_chars_before = rope.len_chars();
         rope.insert_char(char_idx, c);
         let bytes = rope.len_chars() - len_chars_before;
-        vlines.insert(ropes, vline_key, bytes, self.wrap_at);
+        cursor.insert(vlines, ropes, bytes, self.wrap_at);
     }
 
     #[inline]
@@ -65,24 +65,22 @@ impl Buffer {
         vlines: &mut VLines,
         ropes: &mut RopeMap,
         char_idx: usize,
-        vline_key: VLineKey,
+        cursor: VLineCursor,
     ) {
         let rope = &mut ropes[self.key];
         let len_chars_before = rope.len_chars();
         rope.remove(char_idx..=char_idx);
         let bytes = len_chars_before - rope.len_chars();
-        vlines.remove(ropes, vline_key, bytes, self.wrap_at);
+        cursor.remove(vlines, ropes, bytes, self.wrap_at);
     }
 
     pub fn rewrap(&self, vlines: &mut VLines, ropes: &RopeMap) {
-        let mut key = VLineKey::from(self.start);
+        let mut cursor = self.start;
         loop {
-            key = vlines.wrap(ropes, key, self.wrap_at);
-            let next = vlines[key].next;
-            if next == self.end.into() {
+            cursor = cursor.rewrap(vlines, ropes, self.wrap_at);
+            if !cursor.move_next_logical_if(vlines, |cur| cur == self.end) {
                 break;
             }
-            key = next;
         }
     }
 }

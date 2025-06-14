@@ -61,7 +61,7 @@ impl VLines {
         instance
     }
 
-    pub fn wrap(&mut self, ropes: &RopeMap, mut key: VLineKey, wrap_at: usize) -> VLineKey {
+    fn wrap(&mut self, ropes: &RopeMap, mut key: VLineKey, wrap_at: usize) -> VLineKey {
         loop {
             let line = &self.arena[key];
             let slice = line.slice(ropes);
@@ -101,13 +101,7 @@ impl VLines {
         }
     }
 
-    pub fn insert(
-        &mut self,
-        ropes: &RopeMap,
-        at: VLineKey,
-        bytes: usize,
-        wrap_at: usize,
-    ) -> VLineKey {
+    fn insert(&mut self, ropes: &RopeMap, at: VLineKey, bytes: usize, wrap_at: usize) -> VLineKey {
         let mut key = at;
         let buffer_key;
         {
@@ -127,7 +121,7 @@ impl VLines {
         self.wrap(ropes, at, wrap_at)
     }
 
-    pub fn remove(&mut self, ropes: &RopeMap, at: VLineKey, bytes: usize, wrap_at: usize) {
+    fn remove(&mut self, ropes: &RopeMap, at: VLineKey, bytes: usize, wrap_at: usize) {
         let mut key = at;
         let buffer_key;
         {
@@ -188,11 +182,6 @@ impl VLines {
     }
 
     #[inline]
-    pub fn contains_key(&self, key: VLineKey) -> bool {
-        self.arena.contains_key(key)
-    }
-
-    #[inline]
     pub fn get(&self, key: VLineKey) -> Option<&VLine> {
         self.arena.get(key)
     }
@@ -241,7 +230,12 @@ impl std::ops::Index<VLineCursor> for VLines {
     type Output = VLine;
 
     fn index(&self, cur: VLineCursor) -> &Self::Output {
-        &self.arena[cur.key]
+        debug_assert!(!(cur.key.is_null() && cur.offset > 0));
+        let mut line = &self.arena[cur.key];
+        for _ in 0..cur.offset {
+            line = &self.arena[line.next];
+        }
+        line
     }
 }
 
@@ -262,6 +256,16 @@ impl VLine {
     #[inline(always)]
     pub fn slice<'r>(&self, ropes: &'r RopeMap) -> RopeSlice<'r> {
         ropes[self.buffer_key].byte_slice(self.start_byte..self.end_byte)
+    }
+
+    #[inline]
+    pub fn is_indented_at(&self, ropes: &RopeMap, at: usize) -> bool {
+        !self
+            .slice(ropes)
+            .chars()
+            // NOTE: **round up** with INDENT
+            .take((at + INDENT - 1) / INDENT * INDENT)
+            .any(|c| c != ' ')
     }
 }
 
@@ -286,28 +290,44 @@ impl<'v> Iterator for VLineIter<'v> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VLineCursor {
-    pub key: VLineKey,
-    pub offset: usize,
-}
-
-impl From<VLineCursor> for VLineKey {
-    fn from(cur: VLineCursor) -> Self {
-        cur.key
-    }
-}
-
-impl From<VLineKey> for VLineCursor {
-    fn from(key: VLineKey) -> Self {
-        Self { key, offset: 0 }
-    }
+    key: VLineKey,
+    offset: usize,
 }
 
 impl VLineCursor {
+    #[track_caller]
     pub fn new(vlines: &VLines, key: VLineKey) -> Self {
         debug_assert!(!vlines[key].continuation);
         Self { key, offset: 0 }
     }
 
+    #[inline]
+    #[track_caller]
+    pub fn key(&self, vlines: &VLines) -> VLineKey {
+        debug_assert!(!(self.key.is_null() && self.offset > 0));
+        let mut key = self.key;
+        for _ in 0..self.offset {
+            key = vlines[key].next;
+        }
+        key
+    }
+
+    #[inline(always)]
+    pub fn head_key(&self) -> VLineKey {
+        self.key
+    }
+
+    #[inline(always)]
+    pub fn line<'v>(&self, vlines: &'v VLines) -> Option<&'v VLine> {
+        vlines.get(self.key(vlines))
+    }
+
+    #[inline(always)]
+    pub fn head_line<'v>(&self, vlines: &'v VLines) -> Option<&'v VLine> {
+        vlines.get(self.head_key())
+    }
+
+    #[inline(always)]
     pub fn null() -> Self {
         Self {
             key: VLineKey::null(),
@@ -315,6 +335,7 @@ impl VLineCursor {
         }
     }
 
+    #[inline(always)]
     pub fn is_null(&self) -> bool {
         self.key.is_null()
     }
@@ -323,13 +344,13 @@ impl VLineCursor {
         vlines
             .iter(self.key)
             .skip(1)
-            .filter(|(_, line)| line.continuation)
+            .take_while(|(_, line)| line.continuation)
             .last()
             .unwrap_or_else(|| (self.key, &vlines[self.key]))
     }
 
-    pub fn get_prev(&self, vlines: &VLines) -> Option<Self> {
-        let mut key = vlines[self.key].prev;
+    pub fn peek_prev_logical(&self, vlines: &VLines) -> Option<Self> {
+        let mut key = vlines.get(self.key)?.prev;
         loop {
             let line = vlines.get(key)?;
             if !line.continuation {
@@ -340,8 +361,8 @@ impl VLineCursor {
         Some(Self { key, offset: 0 })
     }
 
-    pub fn get_next(&self, vlines: &VLines) -> Option<Self> {
-        let mut key = vlines[self.key].next;
+    pub fn peek_next_logical(&self, vlines: &VLines) -> Option<Self> {
+        let mut key = vlines.get(self.key)?.next;
         loop {
             let line = vlines.get(key)?;
             if !line.continuation {
@@ -352,8 +373,20 @@ impl VLineCursor {
         Some(Self { key, offset: 0 })
     }
 
-    pub fn go_next_if(&mut self, vlines: &VLines, cond: impl FnOnce(VLineCursor) -> bool) -> bool {
-        let Some(next) = self.get_next(vlines) else {
+    pub fn move_next_logical(&mut self, vlines: &VLines) -> bool {
+        let Some(next) = self.peek_next_logical(vlines) else {
+            return false;
+        };
+        *self = next;
+        true
+    }
+
+    pub fn move_next_logical_if(
+        &mut self,
+        vlines: &VLines,
+        cond: impl FnOnce(VLineCursor) -> bool,
+    ) -> bool {
+        let Some(next) = self.peek_next_logical(vlines) else {
             return false;
         };
         if !(cond)(next) {
@@ -363,14 +396,94 @@ impl VLineCursor {
         true
     }
 
+    pub fn peek_next_visual(&self, vlines: &VLines) -> Option<Self> {
+        let next = self.line(vlines)?.next;
+        let (key, offset) = if vlines.get(next)?.continuation {
+            (self.key, self.offset + 1)
+        } else {
+            (next, 0)
+        };
+        Some(Self { key, offset })
+    }
+
+    pub fn move_next_visual(&mut self, vlines: &VLines) -> bool {
+        let Some(next) = self.peek_next_visual(vlines) else {
+            return false;
+        };
+        *self = next;
+        true
+    }
+
+    pub fn move_next_visual_if(
+        &mut self,
+        vlines: &VLines,
+        cond: impl FnOnce(VLineCursor) -> bool,
+    ) -> bool {
+        let Some(next) = self.peek_next_visual(vlines) else {
+            return false;
+        };
+        if !(cond)(next) {
+            return false;
+        }
+        *self = next;
+        true
+    }
+
+    pub fn peek_prev_visual(&self, vlines: &VLines) -> Option<Self> {
+        if self.offset > 0 {
+            Some(Self {
+                offset: self.offset - 1,
+                ..*self
+            })
+        } else {
+            let mut key = vlines[self.key].prev;
+            if key.is_null() {
+                return None;
+            }
+            let mut offset = 0;
+            loop {
+                let line = &vlines[key];
+                if !line.continuation {
+                    break;
+                }
+                offset += 1;
+                key = line.prev;
+            }
+            Some(Self { key, offset })
+        }
+    }
+
+    pub fn move_prev_visual(&mut self, vlines: &VLines) -> bool {
+        let Some(prev) = self.peek_prev_visual(vlines) else {
+            return false;
+        };
+        *self = prev;
+        true
+    }
+
+    pub fn move_prev_visual_if(
+        &mut self,
+        vlines: &VLines,
+        cond: impl FnOnce(VLineCursor) -> bool,
+    ) -> bool {
+        let Some(prev) = self.peek_prev_visual(vlines) else {
+            return false;
+        };
+        if !(cond)(prev) {
+            return false;
+        }
+        *self = prev;
+        true
+    }
+
     #[inline(always)]
     pub fn iter<'v>(&self, vlines: &'v VLines) -> VLineCursorIter<'v> {
         VLineCursorIter {
             vlines,
             index: Some(*self),
             reversed: false,
-            start_bound: None,
-            end_bound: None,
+            start_bound: VLineCursor::null(),
+            end_bound: VLineCursor::null(),
         }
     }
 
@@ -386,6 +499,29 @@ impl VLineCursor {
         let indent = slice.chars().take_while(|c| *c == ' ').count();
         (indent < slice.len_chars() - 1).then_some(indent / INDENT * INDENT)
     }
+
+    #[inline]
+    pub fn insert(
+        &self,
+        vlines: &mut VLines,
+        ropes: &RopeMap,
+        bytes: usize,
+        wrap_at: usize,
+    ) -> VLineKey {
+        vlines.insert(ropes, self.key(vlines), bytes, wrap_at)
+    }
+
+    #[inline]
+    pub fn remove(&self, vlines: &mut VLines, ropes: &RopeMap, bytes: usize, wrap_at: usize) {
+        vlines.remove(ropes, self.key(vlines), bytes, wrap_at);
+    }
+
+    pub fn rewrap(&self, vlines: &mut VLines, ropes: &RopeMap, wrap_at: usize) -> Self {
+        Self {
+            key: vlines.wrap(ropes, self.key, wrap_at),
+            offset: 0,
+        }
+    }
 }
 
 #[derive(derive_more::Debug, Clone)]
@@ -395,27 +531,27 @@ pub struct VLineCursorIter<'v> {
     #[debug(skip)]
     index: Option<VLineCursor>,
     reversed: bool,
-    start_bound: Option<VLineCursor>,
-    end_bound: Option<VLineCursor>,
+    start_bound: VLineCursor,
+    end_bound: VLineCursor,
 }
 
 impl Iterator for VLineCursorIter<'_> {
     type Item = VLineCursor;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index == self.start_bound {
-            return None;
-        }
-        let mut index = if self.reversed {
-            self.index?.get_prev(&self.vlines)
+        let current_index = self.index?;
+        self.index = if self.reversed {
+            if current_index != self.start_bound {
+                self.index?.peek_prev_logical(&self.vlines)
+            } else {
+                None
+            }
         } else {
-            self.index?.get_next(&self.vlines)
+            self.index?
+                .peek_next_logical(&self.vlines)
+                .filter(|idx| *idx != self.end_bound)
         };
-        if index == self.end_bound {
-            index = None;
-        }
-        self.index = index;
-        index
+        Some(current_index)
     }
 }
 
@@ -426,12 +562,12 @@ impl VLineCursorIter<'_> {
     }
 
     pub fn start_bounded(mut self, cursor: VLineCursor) -> Self {
-        self.start_bound = Some(cursor);
+        self.start_bound = cursor;
         self
     }
 
     pub fn end_bounded(mut self, cursor: VLineCursor) -> Self {
-        self.end_bound = Some(cursor);
+        self.end_bound = cursor;
         self
     }
 }

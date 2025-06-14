@@ -49,11 +49,12 @@ impl Window {
         ropes: &'r RopeMap,
         buffers: &BufferMap,
     ) -> impl Iterator<Item = DisplayLine<'r>> {
+        debug_assert!(!self.start.is_null());
         DisplayLineIter {
             ropes,
             buffers,
-            vlines_iter: vlines.iter(self.start.into()),
-            end: self.end.into(),
+            vlines_iter: vlines.iter(self.start.key(vlines)),
+            end: self.end.key(vlines),
             dedent: self.indent,
             prepend_newlines: self.prepend_newlines,
             empty_slice: vlines[self.start].slice(ropes).slice(0..0),
@@ -66,9 +67,7 @@ impl Window {
     }
 
     pub fn scroll_up(&mut self, vlines: &VLines) -> bool {
-        let prev = vlines[self.start].prev;
-        if self.start_idx > 0 && vlines.contains_key(prev) {
-            self.start = prev.into();
+        if self.start_idx > 0 && self.start.move_prev_visual(vlines) {
             self.start_idx -= 1;
             self.move_cursor_prev(vlines);
             self.clear_position();
@@ -79,13 +78,14 @@ impl Window {
     }
 
     pub fn scroll_down(&mut self, vlines: &VLines) -> bool {
-        let next = vlines[self.start].next;
         if self.prepend_newlines > 0 {
             self.prepend_newlines -= 1;
             self.clear_position();
             true
-        } else if self.start.go_next_if(vlines, |key| key != self.end) {
-            self.start = next.into();
+        } else if self
+            .start
+            .move_next_visual_if(vlines, |cur| cur != self.end)
+        {
             self.start_idx += 1;
             self.move_cursor_next(vlines);
             self.clear_position();
@@ -96,9 +96,7 @@ impl Window {
     }
 
     fn move_cursor_prev(&mut self, vlines: &VLines) -> bool {
-        let prev = vlines[self.cursor].prev;
-        if self.cursor_idx > 0 && vlines.contains_key(prev) {
-            self.cursor = prev.into();
+        if self.cursor_idx > 0 && self.cursor.move_prev_visual(vlines) {
             self.cursor_idx -= 1;
             true
         } else {
@@ -107,9 +105,10 @@ impl Window {
     }
 
     fn move_cursor_next(&mut self, vlines: &VLines) -> bool {
-        let next = vlines[self.cursor].next;
-        if next != self.end.into() && vlines.contains_key(next) {
-            self.cursor = next.into();
+        if self
+            .cursor
+            .move_next_visual_if(vlines, |cur| cur != self.end)
+        {
             self.cursor_idx += 1;
             true
         } else {
@@ -305,12 +304,13 @@ impl Window {
         let Position {
             trailing_spaces,
             mut char_idx,
+            relative_x,
             invalid,
             ..
         } = self.position(vlines, ropes, buffers);
         let line = &vlines[self.cursor];
         let buffer = &buffers[line.buffer_key];
-        if invalid {
+        if invalid || line.is_indented_at(ropes, relative_x) {
             return false;
         } else if char_idx >= ropes[line.buffer_key].len_chars() {
             return true;
@@ -322,7 +322,7 @@ impl Window {
                 ropes,
                 char_idx,
                 &VSPACES[..self.prepend_newlines],
-                self.cursor.into(),
+                self.cursor,
             );
             self.prepend_newlines = 0;
         }
@@ -332,7 +332,7 @@ impl Window {
                 ropes,
                 char_idx,
                 &HSPACES[..trailing_spaces],
-                self.cursor.into(),
+                self.cursor,
             );
             char_idx += trailing_spaces;
         }
@@ -361,15 +361,7 @@ impl Window {
             ..
         } = self.position(vlines, ropes, buffers);
         let line = &vlines[self.cursor];
-        if invalid
-            || (c == ' '
-                && !line
-                    .slice(ropes)
-                    .chars()
-                    // NOTE: **round up** with INDENT
-                    .take((relative_x + INDENT - 1) / INDENT * INDENT)
-                    .any(|c| c != ' '))
-        {
+        if invalid || line.is_indented_at(ropes, relative_x) {
             self.clear_position();
             return false;
         }
@@ -380,19 +372,12 @@ impl Window {
                 ropes,
                 char_idx,
                 &VSPACES[..self.prepend_newlines],
-                self.cursor.into(),
+                self.cursor,
             );
             self.prepend_newlines = 0;
         } else if newlines > 0 {
-            self.cursor = buffer
-                .insert(
-                    vlines,
-                    ropes,
-                    char_idx,
-                    &VSPACES[..newlines],
-                    self.cursor.into(),
-                )
-                .into();
+            let key = buffer.insert(vlines, ropes, char_idx, &VSPACES[..newlines], self.cursor);
+            self.cursor = VLineCursor::new(vlines, key);
             char_idx += newlines - 1;
             self.cursor_idx += newlines;
         }
@@ -402,11 +387,11 @@ impl Window {
                 ropes,
                 char_idx,
                 &HSPACES[..trailing_spaces],
-                self.cursor.into(),
+                self.cursor,
             );
             char_idx += trailing_spaces;
         }
-        buffer.insert_char(vlines, ropes, char_idx, c, self.cursor.into());
+        buffer.insert_char(vlines, ropes, char_idx, c, self.cursor);
         char_idx += 1;
         if c == '\n' {
             if self.cur_y < limit {
@@ -454,14 +439,7 @@ impl Window {
         } = self.position(vlines, ropes, buffers);
         let line = &vlines[self.cursor];
         let buffer = &buffers[line.buffer_key];
-        if invalid
-            || !line
-                .slice(ropes)
-                .chars()
-                // NOTE: **round up** with INDENT
-                .take((relative_x + INDENT - 1) / INDENT * INDENT)
-                .any(|c| c != ' ')
-        {
+        if invalid || line.is_indented_at(ropes, relative_x) {
             self.clear_position();
             return false;
         } else if relative_x > 0 {
@@ -475,7 +453,7 @@ impl Window {
                 let line = &vlines[self.cursor];
                 let len_chars = line.slice(ropes).len_chars().saturating_sub(1);
                 self.cur_x = (len_chars + buffer.indent - self.indent) as u16;
-                buffer.remove(vlines, ropes, char_idx, self.cursor.into());
+                buffer.remove(vlines, ropes, char_idx, self.cursor);
                 self.with_position(|p| {
                     p.char_idx = char_idx;
                     p.relative_x = len_chars;
@@ -502,7 +480,7 @@ impl Window {
         }
         if trailing_spaces == 0 {
             char_idx -= 1;
-            buffer.remove(vlines, ropes, char_idx, self.cursor.into());
+            buffer.remove(vlines, ropes, char_idx, self.cursor);
             self.with_position(|p| p.char_idx = char_idx);
         } else {
             self.with_position(|p| p.trailing_spaces -= 1);

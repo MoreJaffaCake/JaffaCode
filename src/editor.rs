@@ -62,13 +62,19 @@ impl Editor {
         let mut buffers = BufferMap::new();
         buffers.insert(
             rope_key,
-            Buffer::new(rope_key, vlines.first().into(), VLineCursor::null(), 40, 0),
+            Buffer::new(
+                rope_key,
+                VLineCursor::new(&vlines, vlines.first()),
+                VLineCursor::null(),
+                40,
+                0,
+            ),
         );
 
         let window = Window::new(
             &buffers,
             &vlines,
-            vlines.first().into(),
+            VLineCursor::new(&vlines, vlines.first()),
             VLineCursor::null(),
         );
 
@@ -205,7 +211,7 @@ impl Editor {
     }
 
     fn split_buffer(&mut self, at: VLineCursor, indent: usize) -> BufferKey {
-        let line = &self.vlines[at.key];
+        let line = &self.vlines[at.head_key()];
         let buffer_key = line.buffer_key;
         let buffer = &mut self.buffers[buffer_key];
         let end = buffer.end;
@@ -241,7 +247,7 @@ impl Editor {
         let new_rope_key = self.ropes.insert(new_rope);
         let new_buffer = Buffer::new(new_rope_key, at, end, wrap_at, buffer.indent + indent);
         self.buffers.insert(new_rope_key, new_buffer);
-        self.vlines.update_rope(at.key, new_rope_key, indent);
+        self.vlines.update_rope(at.head_key(), new_rope_key, indent);
         new_rope_key
     }
 
@@ -260,20 +266,20 @@ impl Editor {
         let end_bound = self.find_block_edge(it, indent);
         if let Some(bound) = end_bound {
             debug_assert_eq!(self.vlines[bound].buffer_key, buffer_key);
-            self.split_buffer(bound.into(), 0);
+            self.split_buffer(bound, 0);
         }
         if let Some(bound) = start_bound {
-            let next = self.vlines[bound].next;
+            let next = bound.peek_next_logical(&self.vlines).unwrap();
             dbg!(
                 self.vlines[next].slice(&self.ropes),
                 indent,
                 end_bound.is_some()
             );
             debug_assert_eq!(self.vlines[next].buffer_key, buffer_key);
-            self.split_buffer(next.into(), indent)
+            self.split_buffer(next, indent)
         } else {
             dbg!(indent, end_bound.is_some());
-            self.split_buffer(buffer_start.into(), indent)
+            self.split_buffer(buffer_start, indent)
         }
     }
 
@@ -309,11 +315,16 @@ impl Editor {
             buffer.wrap_at = wrap_at;
             buffer.indent += INDENT;
             buffer.rewrap(&mut self.vlines, &self.ropes);
+            if next.is_null() {
+                break;
+            }
+            let next_buffer = &self.buffers[self.vlines[next].buffer_key];
             let detected_indent = next
                 .iter(&self.vlines)
+                .end_bounded(next_buffer.end)
                 .find_map(|cur| cur.detect_indent(&self.vlines, &self.ropes))
                 .unwrap_or(0);
-            if self.buffers[self.vlines[next].buffer_key].indent + detected_indent < indent {
+            if next_buffer.indent + detected_indent < indent {
                 break;
             }
             key = self.create_block(next, detected_indent);
@@ -340,11 +351,16 @@ impl Editor {
             buffer.wrap_at = wrap_at;
             buffer.indent -= INDENT;
             buffer.rewrap(&mut self.vlines, &self.ropes);
+            if next.is_null() {
+                break;
+            }
+            let next_buffer = &self.buffers[self.vlines[next].buffer_key];
             let detected_indent = next
                 .iter(&self.vlines)
+                .end_bounded(next_buffer.end)
                 .find_map(|cur| cur.detect_indent(&self.vlines, &self.ropes))
                 .unwrap_or(0);
-            if self.buffers[self.vlines[next].buffer_key].indent + detected_indent < indent {
+            if next_buffer.indent + detected_indent < indent {
                 break;
             }
             key = self.create_block(next, detected_indent);
@@ -362,7 +378,7 @@ impl Editor {
         let indent = self.buffers[self.vlines[cursor].buffer_key].indent + relative_indent;
         let key = self.create_block(cursor, relative_indent);
         let first = std::iter::successors(Some(key), |key| {
-            let prev = self.buffers[*key].start.get_prev(&self.vlines)?;
+            let prev = self.buffers[*key].start.peek_prev_logical(&self.vlines)?;
             let buffer = &self.buffers[self.vlines[prev].buffer_key];
             let detected_indent = prev.detect_indent(&self.vlines, &self.ropes).unwrap_or(0);
             (buffer.indent + detected_indent >= indent)
@@ -397,7 +413,7 @@ impl Editor {
             &self.buffers,
             &self.vlines,
             buffer.start,
-            VLineKey::null().into(),
+            VLineCursor::null(),
         );
     }
 
