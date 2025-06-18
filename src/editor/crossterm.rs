@@ -110,7 +110,14 @@ impl Editor {
                 modifiers: KeyModifiers::NONE,
                 ..
             }) => {
-                self.create_window();
+                self.set_window_to_parent();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::F(8),
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.set_window_to_cursor();
             }
             Event::Key(KeyEvent {
                 code: KeyCode::F(6),

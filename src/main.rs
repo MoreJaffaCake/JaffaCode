@@ -72,11 +72,11 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
             };
 
             for (i, editor) in editors.iter_mut().enumerate() {
-                let mut block = Block::default().borders(Borders::ALL);
+                let mut block = Block::default().fg(Color::Gray);
                 let inner = block.inner(chunks[i]);
                 editor.update_pane_size(inner.width, inner.height);
                 if i == active_editor {
-                    block = block.title("Active");
+                    block = block.fg(Color::White);
                     let (mut x, y) = editor.cursor_position();
                     x += 3;
                     let offset = inner.offset(Offset { x, y }).intersection(inner);
@@ -91,13 +91,15 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                             |DisplayLine {
                                  slice,
                                  indent,
-                                 continuation: _,
+                                 continuation,
                              }| {
-                                Line::from(vec![
-                                    Span::raw(format!("{:02} ", indent.len())),
-                                    Span::raw(indent),
-                                    Span::raw(slice),
-                                ])
+                                let mut info = Span::raw(format!("{:02} ", indent.len()));
+                                if continuation {
+                                    info = info.fg(Color::Green);
+                                } else if indent.len() > 0 {
+                                    info = info.fg(Color::Blue);
+                                }
+                                Line::from(vec![info, Span::raw(indent), Span::raw(slice)])
                             },
                         )
                         .collect::<Vec<_>>(),

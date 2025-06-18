@@ -31,7 +31,7 @@ impl VLines {
                 buffer_key,
                 start_byte: 0,
                 end_byte,
-                continuation: false,
+                continuation: None,
             });
             instance.first = key;
             let key = instance.wrap(ropes, key, WRAP_AT);
@@ -50,7 +50,7 @@ impl VLines {
                 buffer_key,
                 start_byte: prev_end,
                 end_byte,
-                continuation: false,
+                continuation: None,
             });
             instance.arena[prev].next = key;
             let key = instance.wrap(ropes, key, WRAP_AT);
@@ -66,7 +66,8 @@ impl VLines {
             let line = &self.arena[key];
             let slice = line.slice(ropes);
             let len_chars = slice.len_chars();
-            if len_chars <= wrap_at + 1 {
+            let indent = line.continuation.unwrap_or(0).min(wrap_at - INDENT);
+            if len_chars <= wrap_at - indent + 1 {
                 let newline_idx = slice
                     .chars()
                     .enumerate()
@@ -75,7 +76,7 @@ impl VLines {
                     break;
                 } else if let Some(newline_idx) = newline_idx {
                     let byte_idx = slice.char_to_byte(newline_idx + 1);
-                    key = self.split_line(key, byte_idx, false);
+                    key = self.split_line(key, byte_idx, None);
                 } else if self.arena.contains_key(line.next) {
                     debug_assert!(
                         self.arena[line.next].buffer_key == line.buffer_key,
@@ -86,15 +87,23 @@ impl VLines {
                     unreachable!("missing newline at EOF");
                 }
             } else {
-                let byte_idx = slice.char_to_byte(wrap_at);
-                key = self.split_line(key, byte_idx, true);
+                let byte_idx = slice.char_to_byte(wrap_at - indent);
+                let indent = line.continuation.unwrap_or_else(|| {
+                    let indent = self.arena[key]
+                        .slice(ropes)
+                        .chars()
+                        .take_while(|c| *c == ' ')
+                        .count();
+                    indent / INDENT * INDENT
+                });
+                key = self.split_line(key, byte_idx, Some(indent));
             }
         }
         key
     }
 
     #[inline(always)]
-    pub fn iter(&self, index: VLineKey) -> VLineIter {
+    pub fn iter(&self, index: VLineKey) -> VLineIter<'_> {
         VLineIter {
             vlines: self,
             index,
@@ -153,7 +162,12 @@ impl VLines {
     }
 
     #[inline]
-    fn split_line(&mut self, key: VLineKey, byte_idx: usize, continuation: bool) -> VLineKey {
+    fn split_line(
+        &mut self,
+        key: VLineKey,
+        byte_idx: usize,
+        continuation: Option<usize>,
+    ) -> VLineKey {
         let line = &self.arena[key];
         let split_byte = line.start_byte + byte_idx;
         let next = line.next;
@@ -200,9 +214,13 @@ impl VLines {
             line.buffer_key = new_buffer_key;
             line.start_byte -= new_start_byte + cumulative_indent;
             line.end_byte -= new_start_byte + cumulative_indent;
-            if !line.continuation && line.end_byte - line.start_byte > indent {
-                line.end_byte -= indent;
-                cumulative_indent += indent;
+            if line.is_head() {
+                if line.end_byte - line.start_byte > indent {
+                    line.end_byte -= indent;
+                    cumulative_indent += indent;
+                }
+            } else if let Some(continuation) = line.continuation.as_mut() {
+                *continuation -= indent;
             }
             let next = line.next;
             let Some(next_line) = self.arena.get_mut(next) else {
@@ -249,7 +267,7 @@ pub struct VLine {
     pub buffer_key: BufferKey,
     pub start_byte: usize,
     pub end_byte: usize,
-    pub continuation: bool,
+    pub continuation: Option<usize>,
 }
 
 impl VLine {
@@ -265,6 +283,16 @@ impl VLine {
             // NOTE: **round up** with INDENT
             .take((at + INDENT - 1) / INDENT * INDENT)
             .all(|c| c == ' ')
+    }
+
+    #[inline(always)]
+    pub fn is_head(&self) -> bool {
+        self.continuation.is_none()
+    }
+
+    #[inline(always)]
+    pub fn is_continuation(&self) -> bool {
+        self.continuation.is_some()
     }
 }
 
@@ -296,7 +324,7 @@ pub struct VLineCursor {
 impl VLineCursor {
     #[track_caller]
     pub fn new(vlines: &VLines, key: VLineKey) -> Self {
-        debug_assert!(!vlines[key].continuation);
+        debug_assert!(vlines[key].is_head());
         Self { key, offset: 0 }
     }
 
@@ -322,6 +350,7 @@ impl VLineCursor {
     }
 
     #[inline(always)]
+    #[allow(dead_code)]
     pub fn head_line<'v>(&self, vlines: &'v VLines) -> Option<&'v VLine> {
         vlines.get(self.head_key())
     }
@@ -343,7 +372,7 @@ impl VLineCursor {
         vlines
             .iter(self.key)
             .skip(1)
-            .take_while(|(_, line)| line.continuation)
+            .take_while(|(_, line)| line.is_continuation())
             .last()
             .unwrap_or_else(|| (self.key, &vlines[self.key]))
     }
@@ -352,7 +381,7 @@ impl VLineCursor {
         let mut key = vlines.get(self.key)?.prev;
         loop {
             let line = vlines.get(key)?;
-            if !line.continuation {
+            if line.is_head() {
                 break;
             }
             key = line.prev;
@@ -364,7 +393,7 @@ impl VLineCursor {
         let mut key = vlines.get(self.key)?.next;
         loop {
             let line = vlines.get(key)?;
-            if !line.continuation {
+            if line.is_head() {
                 break;
             }
             key = line.next;
@@ -372,6 +401,7 @@ impl VLineCursor {
         Some(Self { key, offset: 0 })
     }
 
+    #[allow(dead_code)]
     pub fn move_next_logical(&mut self, vlines: &VLines) -> bool {
         let Some(next) = self.peek_next_logical(vlines) else {
             return false;
@@ -397,7 +427,7 @@ impl VLineCursor {
 
     pub fn peek_next_visual(&self, vlines: &VLines) -> Option<Self> {
         let next = self.line(vlines)?.next;
-        let (key, offset) = if vlines.get(next)?.continuation {
+        let (key, offset) = if vlines.get(next)?.is_continuation() {
             (self.key, self.offset + 1)
         } else {
             (next, 0)
@@ -442,7 +472,7 @@ impl VLineCursor {
             let mut offset = 0;
             loop {
                 let line = &vlines[key];
-                if !line.continuation {
+                if line.is_head() {
                     break;
                 }
                 offset += 1;
@@ -460,6 +490,7 @@ impl VLineCursor {
         true
     }
 
+    #[allow(dead_code)]
     pub fn move_prev_visual_if(
         &mut self,
         vlines: &VLines,
