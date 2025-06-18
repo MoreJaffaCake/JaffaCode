@@ -91,6 +91,7 @@ impl Editor {
 
     #[inline]
     pub fn insert_char(&mut self, c: char) {
+        self.create_block_at_cursor();
         if self.window.insert_char(
             &mut self.vlines,
             &mut self.ropes,
@@ -100,16 +101,13 @@ impl Editor {
         ) {
             return;
         } else if c == ' ' {
-            if self.indent() {
-                for _ in 0..INDENT {
-                    self.window.move_cursor_right(&self.vlines, &self.buffers);
-                }
-            }
+            self.indent();
         }
     }
 
     #[inline]
     pub fn delete_char_forward(&mut self) {
+        self.create_block_at_cursor();
         if self
             .window
             .delete_char_forward(&mut self.vlines, &mut self.ropes, &self.buffers)
@@ -121,6 +119,7 @@ impl Editor {
 
     #[inline]
     pub fn delete_char_backward(&mut self) {
+        self.create_block_at_cursor();
         if self
             .window
             .delete_char_backward(&mut self.vlines, &mut self.ropes, &self.buffers)
@@ -153,7 +152,8 @@ impl Editor {
 
     #[inline]
     pub fn move_cursor_right(&mut self) {
-        self.window.move_cursor_right(&self.vlines, &self.buffers)
+        self.window
+            .move_cursor_right(&self.vlines, &self.ropes, &self.buffers)
     }
 
     #[inline]
@@ -284,13 +284,16 @@ impl Editor {
         }
     }
 
+    fn create_block_at_cursor(&mut self) -> Option<(BufferKey, usize)> {
+        let cursor = self.window.cursor(&self.vlines);
+        let key = self.create_block(cursor, cursor.detect_indent(&self.vlines, &self.ropes)?);
+        Some((key, self.buffers[key].indent))
+    }
+
     fn indent(&mut self) -> bool {
-        let cursor = self.window.cursor();
-        let origin = self.create_block(
-            cursor,
-            cursor.detect_indent(&self.vlines, &self.ropes).unwrap_or(0),
-        );
-        let indent = self.buffers[origin].indent;
+        let Some((origin, indent)) = self.create_block_at_cursor() else {
+            return false;
+        };
         let mut key = origin;
         loop {
             self.buffers[key].indent(&mut self.vlines, &self.ropes);
@@ -321,15 +324,9 @@ impl Editor {
     }
 
     fn dedent(&mut self) -> bool {
-        let cursor = self.window.cursor();
-        let origin = self.create_block(
-            cursor,
-            cursor.detect_indent(&self.vlines, &self.ropes).unwrap_or(0),
-        );
-        if self.buffers[origin].indent < INDENT {
+        let Some((origin, indent)) = self.create_block_at_cursor() else {
             return false;
-        }
-        let indent = self.buffers[origin].indent;
+        };
         let mut key = origin;
         loop {
             self.buffers[key].dedent(&mut self.vlines, &self.ropes);
@@ -360,12 +357,9 @@ impl Editor {
     }
 
     pub fn create_window(&mut self) {
-        let cursor = self.window.cursor();
-        let Some(relative_indent) = cursor.detect_indent(&self.vlines, &self.ropes) else {
+        let Some((key, indent)) = self.create_block_at_cursor() else {
             return;
         };
-        let indent = self.buffers[self.vlines[cursor].buffer_key].indent + relative_indent;
-        let key = self.create_block(cursor, relative_indent);
         let first = std::iter::successors(Some(key), |key| {
             let prev = self.buffers[*key].start.peek_prev_logical(&self.vlines)?;
             let buffer = &self.buffers[self.vlines[prev].buffer_key];
