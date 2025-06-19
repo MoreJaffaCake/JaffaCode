@@ -439,7 +439,7 @@ impl Window {
         } = self.position(vlines, ropes, buffers);
         let line = &vlines[self.cursor];
         let buffer = &buffers[line.buffer_key];
-        if invalid || line.is_indented_at(ropes, relative_x) {
+        if invalid || (self.cur_x > 0 && line.is_indented_at(ropes, relative_x)) {
             self.clear_position();
             return false;
         } else if relative_x > 0 {
