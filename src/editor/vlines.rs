@@ -260,12 +260,11 @@ impl VLine {
 
     #[inline]
     pub fn is_indented_at(&self, ropes: &RopeMap, at: usize) -> bool {
-        !self
-            .slice(ropes)
+        self.slice(ropes)
             .chars()
             // NOTE: **round up** with INDENT
             .take((at + INDENT - 1) / INDENT * INDENT)
-            .any(|c| c != ' ')
+            .all(|c| c == ' ')
     }
 }
 
