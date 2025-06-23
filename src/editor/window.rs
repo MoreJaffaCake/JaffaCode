@@ -161,7 +161,11 @@ impl Window {
         let mut char_idx = rope.byte_to_char(line.start_byte);
         let mut newlines = (self.start_idx + self.cur_y as usize).saturating_sub(self.cursor_idx);
         let trailing_spaces: usize;
-        let len_chars = line.slice(ropes).len_chars().saturating_sub(1);
+        let slice = line.slice(ropes);
+        let mut len_chars = slice.len_chars();
+        if slice.chars_at(len_chars).reversed().next().unwrap() == '\n' {
+            len_chars -= 1;
+        }
         if self.prepend_newlines > 0 {
             trailing_spaces = relative_x as usize;
             newlines = 0;
