@@ -321,6 +321,7 @@ pub struct VLineCursor {
     offset: usize,
 }
 
+#[allow(dead_code)]
 impl VLineCursor {
     #[track_caller]
     pub fn new(vlines: &VLines, key: VLineKey) -> Self {
@@ -340,6 +341,11 @@ impl VLineCursor {
     }
 
     #[inline(always)]
+    pub fn buffer(&self, vlines: &VLines) -> BufferKey {
+        vlines[self.key].buffer_key
+    }
+
+    #[inline(always)]
     pub fn head_key(&self) -> VLineKey {
         self.key
     }
@@ -350,7 +356,6 @@ impl VLineCursor {
     }
 
     #[inline(always)]
-    #[allow(dead_code)]
     pub fn head_line<'v>(&self, vlines: &'v VLines) -> Option<&'v VLine> {
         vlines.get(self.head_key())
     }
@@ -389,6 +394,29 @@ impl VLineCursor {
         Some(Self { key, offset: 0 })
     }
 
+    pub fn move_prev_logical(&mut self, vlines: &VLines) -> bool {
+        let Some(prev) = self.peek_prev_logical(vlines) else {
+            return false;
+        };
+        *self = prev;
+        true
+    }
+
+    pub fn move_prev_logical_if(
+        &mut self,
+        vlines: &VLines,
+        cond: impl FnOnce(VLineCursor) -> bool,
+    ) -> bool {
+        let Some(prev) = self.peek_prev_logical(vlines) else {
+            return false;
+        };
+        if !(cond)(prev) {
+            return false;
+        }
+        *self = prev;
+        true
+    }
+
     pub fn peek_next_logical(&self, vlines: &VLines) -> Option<Self> {
         let mut key = vlines.get(self.key)?.next;
         loop {
@@ -401,7 +429,6 @@ impl VLineCursor {
         Some(Self { key, offset: 0 })
     }
 
-    #[allow(dead_code)]
     pub fn move_next_logical(&mut self, vlines: &VLines) -> bool {
         let Some(next) = self.peek_next_logical(vlines) else {
             return false;
@@ -490,7 +517,6 @@ impl VLineCursor {
         true
     }
 
-    #[allow(dead_code)]
     pub fn move_prev_visual_if(
         &mut self,
         vlines: &VLines,

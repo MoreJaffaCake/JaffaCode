@@ -52,75 +52,110 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
     let mut active_editor = 0;
     let mut scroll: usize = 1;
     let mut debug = false;
+    let mut terminal_size = None;
 
     loop {
-        terminal.draw(|f| {
-            let cols = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Min(43), Constraint::Fill(2)])
-                .split(f.area());
-            let chunks = if debug {
-                Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints(&constraints)
-                    .split(cols[0])
+        let draw = {
+            let new_size = terminal.size().ok();
+            if terminal_size == new_size {
+                false
             } else {
-                Layout::default()
+                terminal_size = terminal.size().ok();
+                true
+            }
+        };
+
+        if draw {
+            terminal.draw(|f| {
+                let cols = Layout::default()
                     .direction(Direction::Horizontal)
-                    .constraints(&constraints)
-                    .split(f.area())
-            };
+                    .constraints([Constraint::Min(43), Constraint::Fill(2)])
+                    .split(f.area());
+                let editor_areas = if debug {
+                    Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints(&constraints)
+                        .split(cols[0])
+                } else {
+                    Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints(&constraints)
+                        .split(f.area())
+                };
 
-            for (i, editor) in editors.iter_mut().enumerate() {
-                let mut block = Block::default().fg(Color::Gray);
-                let inner = block.inner(chunks[i]);
-                editor.update_pane_size(inner.width, inner.height);
-                if i == active_editor {
-                    block = block.fg(Color::White);
-                    let (mut x, y) = editor.cursor_position();
-                    x += 3;
-                    let offset = inner.offset(Offset { x, y }).intersection(inner);
-                    if !offset.is_empty() {
-                        f.set_cursor_position(offset);
+                for (i, editor) in editors.iter_mut().enumerate() {
+                    let location = editor.location();
+                    let editor_comps = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([
+                            Constraint::Length(location.lines.len() as _),
+                            Constraint::Percentage(100),
+                        ])
+                        .split(editor_areas[i]);
+                    let block = Block::default().fg(Color::White).bg(Color::Blue);
+                    let p = Paragraph::new(
+                        location
+                            .lines
+                            .into_iter()
+                            .map(|DisplayLine { slice, indent, .. }| {
+                                Line::from(vec![Span::raw(indent), Span::raw(slice)])
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                    .block(block);
+                    f.render_widget(p, editor_comps[0]);
+                    let mut block = Block::default().fg(Color::Gray);
+                    let inner = block.inner(editor_comps[1]);
+                    editor.update_pane_size(inner.width, inner.height);
+                    if i == active_editor {
+                        block = block.fg(Color::White);
+                        let (mut x, y) = editor.cursor_position();
+                        x += 4;
+                        let offset = inner.offset(Offset { x, y }).intersection(inner);
+                        if !offset.is_empty() {
+                            f.set_cursor_position(offset);
+                        }
                     }
+                    let p = Paragraph::new(
+                        editor
+                            .get_display_lines()
+                            .map(
+                                |DisplayLine {
+                                     slice,
+                                     indent,
+                                     continuation,
+                                 }| {
+                                    let mut info = Span::raw(format!("{:02}  ", indent.len()));
+                                    if continuation {
+                                        info = info.fg(Color::Green);
+                                    } else if indent.len() > 0 {
+                                        info = info.fg(Color::Blue);
+                                    } else {
+                                        info = info.fg(Color::Gray);
+                                    }
+                                    Line::from(vec![info, Span::raw(indent), Span::raw(slice)])
+                                },
+                            )
+                            .collect::<Vec<_>>(),
+                    )
+                    .block(block);
+                    f.render_widget(p, editor_comps[1]);
                 }
-                let p = Paragraph::new(
-                    editor
-                        .get_display_lines()
-                        .map(
-                            |DisplayLine {
-                                 slice,
-                                 indent,
-                                 continuation,
-                             }| {
-                                let mut info = Span::raw(format!("{:02} ", indent.len()));
-                                if continuation {
-                                    info = info.fg(Color::Green);
-                                } else if indent.len() > 0 {
-                                    info = info.fg(Color::Blue);
-                                }
-                                Line::from(vec![info, Span::raw(indent), Span::raw(slice)])
-                            },
-                        )
-                        .collect::<Vec<_>>(),
-                )
-                .block(block);
-                f.render_widget(p, chunks[i]);
-            }
 
-            if debug {
-                let info = format!("{:#?}", editors);
-                let p = Paragraph::new(
-                    info.lines()
-                        .skip(scroll)
-                        .map(|x| Line::from(Span::raw(x)))
-                        .collect::<Vec<_>>(),
-                )
-                .wrap(Wrap { trim: false })
-                .block(Block::default().borders(Borders::ALL));
-                f.render_widget(p, cols[1]);
-            }
-        })?;
+                if debug {
+                    let info = format!("{:#?}", editors);
+                    let p = Paragraph::new(
+                        info.lines()
+                            .skip(scroll)
+                            .map(|x| Line::from(Span::raw(x)))
+                            .collect::<Vec<_>>(),
+                    )
+                    .wrap(Wrap { trim: false })
+                    .block(Block::default().borders(Borders::ALL));
+                    f.render_widget(p, cols[1]);
+                }
+            })?;
+        }
 
         if event::poll(Duration::from_millis(100))? {
             let mut event = event::read()?;
@@ -150,6 +185,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                 }) => {
                     active_editor += 1;
                     active_editor %= editors.len();
+                    terminal_size = None;
                     continue;
                 }
                 Event::Key(KeyEvent {
@@ -162,6 +198,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     modifiers: KeyModifiers::ALT,
                     ..
                 }) => {
+                    terminal_size = None;
                     scroll = scroll.saturating_sub(5);
                 }
                 Event::Key(KeyEvent {
@@ -169,6 +206,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     modifiers: KeyModifiers::ALT,
                     ..
                 }) => {
+                    terminal_size = None;
                     scroll += 5;
                 }
                 Event::Key(KeyEvent {
@@ -176,10 +214,13 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
                     modifiers: KeyModifiers::CONTROL,
                     ..
                 }) => {
+                    terminal_size = None;
                     debug ^= true;
                 }
                 _ => {
-                    editors[active_editor].handle_event(event);
+                    if editors[active_editor].handle_event(event) {
+                        terminal_size = None;
+                    }
                 }
             }
         }

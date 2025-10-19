@@ -4,6 +4,8 @@ use super::*;
 pub struct Window {
     #[debug(skip)]
     start: VLineCursor,
+    #[debug(skip)]
+    scroll: VLineCursor,
     start_idx: usize,
     #[debug(skip)]
     end: VLineCursor,
@@ -30,6 +32,7 @@ impl Window {
     pub fn new(buffers: &BufferMap, vlines: &VLines, start: VLineCursor, end: VLineCursor) -> Self {
         Self {
             start,
+            scroll: start,
             start_idx: 0,
             end,
             cursor_idx: 0,
@@ -48,21 +51,26 @@ impl Window {
         ropes: &'r RopeMap,
         buffers: &BufferMap,
     ) -> impl Iterator<Item = DisplayLine<'r>> {
-        debug_assert!(!self.start.is_null());
+        debug_assert!(!self.scroll.is_null());
         DisplayLineIter {
             ropes,
             buffers,
-            vlines_iter: vlines.iter(self.start.key(vlines)),
+            vlines_iter: vlines.iter(self.scroll.key(vlines)),
             end: self.end.key(vlines),
             dedent: self.indent,
             prepend_newlines: self.prepend_newlines,
-            empty_slice: vlines[self.start].slice(ropes).slice(0..0),
+            empty_slice: vlines[self.scroll].slice(ropes).slice(0..0),
         }
     }
 
     #[inline(always)]
-    pub fn cursor(&mut self, vlines: &VLines) -> VLineCursor {
-        let mut cursor = self.start;
+    pub fn start(&self) -> VLineCursor {
+        self.start
+    }
+
+    #[inline]
+    pub fn cursor(&self, vlines: &VLines) -> VLineCursor {
+        let mut cursor = self.scroll;
         for _ in 0..self.cursor_idx {
             if cursor == self.end {
                 break;
@@ -75,7 +83,7 @@ impl Window {
     }
 
     pub fn scroll_up(&mut self, vlines: &VLines) -> bool {
-        if self.start_idx > 0 && self.start.move_prev_visual(vlines) {
+        if self.start_idx > 0 && self.scroll.move_prev_visual(vlines) {
             self.start_idx -= 1;
             self.clear_position();
             true
@@ -90,7 +98,7 @@ impl Window {
             self.clear_position();
             true
         } else if self
-            .start
+            .scroll
             .move_next_visual_if(vlines, |cur| cur != self.end)
         {
             self.start_idx += 1;
@@ -135,7 +143,7 @@ impl Window {
 
     fn get_position(&self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) -> Position {
         let mut newlines = 0;
-        let mut cursor = self.start;
+        let mut cursor = self.scroll;
         for _ in 0..self.cursor_idx {
             if !cursor.move_next_visual_if(vlines, |cur| cur != self.end) {
                 newlines += 1;
@@ -184,7 +192,7 @@ impl Window {
         (T::from(self.cur_x), T::from(self.cur_y))
     }
 
-    pub fn move_cursor_up(&mut self, vlines: &VLines) {
+    pub fn move_cursor_up(&mut self, vlines: &VLines) -> bool {
         if self.cur_y > 0 {
             self.cur_y -= 1;
             self.cursor_idx -= 1;
@@ -194,9 +202,10 @@ impl Window {
             self.scroll_up(vlines);
         }
         self.clear_position();
+        true
     }
 
-    pub fn move_cursor_down(&mut self, vlines: &VLines, limit: u16) {
+    pub fn move_cursor_down(&mut self, vlines: &VLines, limit: u16) -> bool {
         if self.prepend_newlines > 0 {
             self.prepend_newlines -= 1;
         } else if self.cur_y < limit {
@@ -206,9 +215,15 @@ impl Window {
         } else {
             self.scroll_down(vlines);
         }
+        true
     }
 
-    pub fn move_cursor_left(&mut self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) {
+    pub fn move_cursor_left(
+        &mut self,
+        vlines: &VLines,
+        ropes: &RopeMap,
+        buffers: &BufferMap,
+    ) -> bool {
         if self.cur_x > 0 {
             // TODO not if continuation line
             self.cur_x -= 1;
@@ -219,11 +234,13 @@ impl Window {
             } else if self.start_idx > 0 {
                 self.scroll_up(vlines);
             } else {
-                return;
+                // TODO seems inconsistent with move_cursor_right
+                return false;
             }
             self.move_cursor_at_end(vlines, ropes, buffers);
         }
         self.clear_position();
+        true
     }
 
     #[allow(dead_code)]
@@ -237,7 +254,12 @@ impl Window {
         }
     }
 
-    pub fn move_cursor_right(&mut self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) {
+    pub fn move_cursor_right(
+        &mut self,
+        vlines: &VLines,
+        ropes: &RopeMap,
+        buffers: &BufferMap,
+    ) -> bool {
         if self.cur_x as usize + 1 < WRAP_AT {
             self.cur_x += 1;
         } else {
@@ -246,6 +268,7 @@ impl Window {
             self.move_cursor_at_start(vlines, ropes, buffers);
         }
         self.clear_position();
+        true
     }
 
     #[allow(dead_code)]
@@ -259,12 +282,22 @@ impl Window {
         }
     }
 
-    pub fn move_cursor_at_0(&mut self) {
-        self.cur_x = 0;
-        self.clear_position();
+    pub fn move_cursor_at_0(&mut self) -> bool {
+        if self.cur_x != 0 {
+            self.cur_x = 0;
+            self.clear_position();
+            true
+        } else {
+            false
+        }
     }
 
-    pub fn move_cursor_at_start(&mut self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) {
+    pub fn move_cursor_at_start(
+        &mut self,
+        vlines: &VLines,
+        ropes: &RopeMap,
+        buffers: &BufferMap,
+    ) -> bool {
         if self.prepend_newlines == 0 {
             // TODO not great to do here
             let Position {
@@ -288,9 +321,16 @@ impl Window {
             self.cur_x = 0;
         }
         self.clear_position();
+        // TODO probably no need to always refresh
+        true
     }
 
-    pub fn move_cursor_at_end(&mut self, vlines: &VLines, ropes: &RopeMap, buffers: &BufferMap) {
+    pub fn move_cursor_at_end(
+        &mut self,
+        vlines: &VLines,
+        ropes: &RopeMap,
+        buffers: &BufferMap,
+    ) -> bool {
         if self.prepend_newlines == 0 {
             // TODO not great to do here
             let Position {
@@ -316,6 +356,8 @@ impl Window {
             self.cur_x = 0;
         }
         self.clear_position();
+        // TODO probably no need to always refresh
+        true
     }
 
     pub fn delete_char_forward(
@@ -509,57 +551,5 @@ impl Window {
             self.with_position(|p| p.trailing_spaces -= 1);
         }
         true
-    }
-}
-
-#[derive(derive_more::Debug)]
-pub struct DisplayLineIter<'v, 'r, 'b> {
-    #[debug(skip)]
-    ropes: &'r RopeMap,
-    #[debug(skip)]
-    buffers: &'b BufferMap,
-    #[debug(skip)]
-    vlines_iter: VLineIter<'v>,
-    end: VLineKey,
-    dedent: usize,
-    prepend_newlines: usize,
-    #[debug(skip)]
-    empty_slice: RopeSlice<'r>,
-}
-
-impl<'v, 'r, 'b> Iterator for DisplayLineIter<'v, 'r, 'b> {
-    type Item = DisplayLine<'r>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.prepend_newlines > 0 {
-            self.prepend_newlines -= 1;
-            return Some(DisplayLine {
-                slice: self.empty_slice.clone(),
-                indent: &"",
-                continuation: false,
-            });
-        }
-        let (key, line) = self.vlines_iter.next()?;
-        if key == self.end {
-            return None;
-        }
-        debug_assert!(self.buffers[line.buffer_key].indent >= self.dedent);
-        let indent =
-            self.buffers[line.buffer_key].indent - self.dedent + line.continuation.unwrap_or(0);
-        let slice = line.slice(&self.ropes);
-        debug_assert!(
-            slice
-                .chars_at(slice.len_chars())
-                .reversed()
-                .skip(1)
-                .all(|c| c != '\n'),
-            "newline in DisplayLine: {:?}",
-            slice
-        );
-        Some(DisplayLine {
-            slice,
-            indent: &HSPACES[..indent],
-            continuation: line.is_continuation(),
-        })
     }
 }
